@@ -51,7 +51,7 @@ Install ros packages
 
 Get the vcs repo file:
 
-    wget https://raw.githubusercontent.com/AerialRobots/aerial_project/master/project_cfg/vcsFiles/kinetic.repos
+    wget https://raw.githubusercontent.com/AerialRobots/final_aerial_project/master/project_cfg/vcsFiles/kinetic.repos
 
 Import the repos
 
@@ -59,14 +59,14 @@ Import the repos
 
 Run the python script located in 
 
-    python3 aerial_project/project_cfg/scripts/kineticUpdates.py
+    python3 final_aerial_project/project_cfg/scripts/kineticUpdates.py
 
 
 ### Ros melodic (and ubuntu 18.04 LTS):
 
 Get the vcs repo file:
 
-    wget https://raw.githubusercontent.com/AerialRobots/aerial_project/master/project_cfg/vcsFiles/melodic.repos
+    wget https://raw.githubusercontent.com/AerialRobots/final_aerial_project/master/project_cfg/vcsFiles/melodic.repos
 
 Import the repos
 
@@ -74,7 +74,7 @@ Import the repos
 
 Run the python script located in 
 
-    python3 aerial_project/project_cfg/scripts/melodicUpdates.py
+    python3 final_aerial_project/project_cfg/scripts/melodicUpdates.py
 
 ### Compile everything
 
