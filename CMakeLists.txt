@@ -173,13 +173,6 @@ target_link_libraries(path_planner_node
         ${PROJECT_NAME}
         )
 
-add_executable(husky_node
-        src/husky_node.cpp)
-target_link_libraries(husky_node
-        ${catkin_LIBRARIES}
-        ${PROJECT_NAME}
-        )
-
 
 #############
 ## Install ##

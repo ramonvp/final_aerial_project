@@ -1,7 +1,7 @@
 <launch>
   <arg name="mav_name" default="firefly"/>
   <arg name="husky_name" default="husky"/>
-  <arg name="world_name" default="$(find aerial_project)/worlds/industrial_env_final_markers.world"/>  
+  <arg name="world_name" default="$(find aerial_project)/worlds/industrial_env_final_markers_v3.world"/>  
   <arg name="enable_logging" default="false" />
   <arg name="enable_ground_truth" default="true" />
   <arg name="log_file" default="$(arg mav_name)" />
@@ -17,7 +17,6 @@
   <arg name="groundMarkerFile" default="$(find aerial_project)/cfg/groundMarkers.yaml"/>
   <arg name="dispatcherConfigFile" default="$(find aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
 
-  <arg name="husky_mission_file" default="$(find aerial_project)/cfg/missions_husky/line.txt"/>
   <!-- The following line causes gzmsg and gzerr messages to be printed to the console
       (even when Gazebo is started through roslaunch) -->
 
@@ -31,7 +30,7 @@
     <arg name="gui" value="$(arg gui)" />
     <arg name="verbose" value="$(arg verbose)"/>
 </include>
- 
+
   <group ns="$(arg mav_name)">
     <include file="$(find rotors_gazebo)/launch/spawn_mav.launch">
       <arg name="mav_name" value="$(arg mav_name)" />
@@ -39,8 +38,8 @@
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)"/>
-      <arg name="y" value="-2.5"/>
-      <arg name="x" value="-2.5"/>
+      <arg name="y" value="2.5"/>
+      <arg name="x" value="2.5"/>
       <arg name="z" value="0.15"/>
     </include>
 
@@ -82,35 +81,22 @@
     <node pkg="tf" type="static_transform_publisher" name="world_odom_broadcaster" args="0 0 0 0 0 0 1 world odom 100" />
     
   </group>  
+<include file="$(find husky_gazebo)/launch/spawn_husky.launch">
+    <arg name="x" default="6.0"/>
+    <arg name="y" default="25.0"/>
+    <arg name="z" default="0.0"/>
+    <arg name="yaw" default="0"/>
+    <arg name="laser_enabled" value="false"/>
+    <arg name="kinect_enabled" value="false"/>
+    <arg name="robot_namespace" value="$(arg husky_name)"/>
+  </include> 
 
-
-    <include file="$(find husky_gazebo)/launch/spawn_husky.launch">
-        <arg name="x" default="-36.0"/>
-        <arg name="y" default="-15.0"/>
-        <arg name="z" default="0.3"/>
-        <arg name="yaw" default="0"/>
-        <arg name="laser_enabled" value="false"/>
-        <arg name="kinect_enabled" value="false"/>
-        <arg name="robot_namespace" value="$(arg husky_name)"/>
-    </include>
-
-
-  <group ns="$(arg husky_name)">
-    <node name="husky_node" pkg="aerial_project" type="husky_node">
-        <param name="mission_file" value="$(arg husky_mission_file)" /> 
-        <param name="thr_rotation_error" value="0.1" /> 
-        <param name="rotation_speed" value="1.0" /> 
-        <param name="linear_speed" value="2.0" /> 
-    </node> 
-  </group>
   
+  <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
 
-   <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
-
-
-  <!-- Mapping -->
+<!--  Mapping  -->
    <include file="$(find aerial_project)/launch/mapping.launch"/> 
-
+   
   <!-- Dump groundMarkers info into the parameter server -->
   <rosparam command="load" file="$(arg groundMarkerFile)" />
 

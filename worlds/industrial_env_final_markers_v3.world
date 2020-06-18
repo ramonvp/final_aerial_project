@@ -2103,11 +2103,11 @@
           <wrench>0 0 0 0 -0 0</wrench>
         </link>
       </model>
-      <model name='Big box 4'>
-        <pose frame=''>16.5299 1.15244 3.82786 0 -0 1.56629</pose>
+     <model name='Big box 4 Mod'>
+        <pose frame=''>14.6782 1.04078 2.16142 0 -0 1.57766</pose>
         <scale>1 1 1</scale>
-        <link name='Big box 4::link'>
-          <pose frame=''>16.5299 1.15244 3.82786 0 -0 1.56629</pose>
+        <link name='link'>
+          <pose frame=''>14.6782 1.04078 2.16142 0 -0 1.57766</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -2253,11 +2253,11 @@
           <wrench>0 0 0 0 -0 0</wrench>
         </link>
       </model>
-      <model name='big_box3'>
-        <pose frame=''>15.1582 1.38986 2.24666 -0.00014 -0 1.57255</pose>
+      <model name='Big box 3 Mod'>
+        <pose frame=''>17.5441 0.952363 3.82734 0 -0 1.61472</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose frame=''>15.1582 1.38986 2.24666 -0.00014 -0 1.57255</pose>
+          <pose frame=''>17.5441 0.952363 3.82734 0 -0 1.61472</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -2520,8 +2520,8 @@
         <kinematic>0</kinematic>
       </link>
     </model>
-    <model name='big_box3'>
-      <pose frame=''>27.7657 17.477 0.625 0 -0 0</pose>
+     <model name='Big box 3 Mod'>
+      <pose frame=''>16.8209 3.70315 0.625 0 -0 0</pose>
       <static>1</static>
       <link name='link'>
         <inertial>
@@ -2561,7 +2561,7 @@
         <visual name='visual'>
           <geometry>
             <mesh>
-              <uri>model://big_box3/meshes/big_box.dae</uri>
+              <uri>model://big_box3_mod/meshes/big_box3_mod.dae</uri>
             </mesh>
           </geometry>
         </visual>
@@ -2569,10 +2569,10 @@
         <kinematic>0</kinematic>
       </link>
     </model>
-    <model name='Big box 4'>
-      <pose frame=''>28.1245 22.6331 0.625 0 -0 0</pose>
+    <model name='Big box 4 Mod'>
+      <pose frame=''>14.6634 3.90408 0.625 0 -0 0</pose>
       <static>1</static>
-      <link name='Big box 4::link'>
+      <link name='link'>
         <inertial>
           <mass>40</mass>
           <inertia>
@@ -2610,7 +2610,7 @@
         <visual name='visual'>
           <geometry>
             <mesh>
-              <uri>model://big_box4/meshes/big_box.dae</uri>
+              <uri>model://big_box4_mod/meshes/big_box4_mod.dae</uri>
             </mesh>
           </geometry>
         </visual>
@@ -2718,6 +2718,10 @@
       <allow_auto_disable>1</allow_auto_disable>
       <pose frame=''>21.8276 3.13698 0 0 -0 0</pose>
     </model>
+<include>
+<uri>model://marker_husky</uri>
+<pose> 6.0 25.0 0.4 0.0 0.0 0.0 </pose>
+</include>
 <include>
 <uri>model://marker_0</uri>
 <pose> 2.2 2.3 0.001 0.0 0.0 0.0 </pose>

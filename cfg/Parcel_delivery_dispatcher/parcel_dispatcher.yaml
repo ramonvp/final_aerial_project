@@ -6,5 +6,7 @@ parcel_dispatcher:
   charging_pad_pose: [3.5, 3.5, 0.07, 0.0, 0.0, 0.0, 1.0] # x, y, z, qx, qy, qz, qw
   shelve_pose: [15.0, 3.0, 1.0, 0.0, 0.0, -1.0, 1.0]
   detection_threshold: 1.0
+  battery_time: 5
+ 
 
 
