@@ -1,0 +1,10 @@
+parcel_dispatcher:
+  numberOfTargets: 4
+  marker_id: [0, 1, 2, -1]
+  item_location: ['SHELVE','SHELVE','HUSKY','END']
+  check_pad_position: [21.82, 3.13, 0.055]
+  charging_pad_pose: [3.5, 3.5, 0.07, 0.0, 0.0, 0.0, 1.0] # x, y, z, qx, qy, qz, qw
+  shelve_pose: [15.0, 3.0, 1.0, 0.0, 0.0, -1.0, 1.0]
+  detection_threshold: 1.0
+
+

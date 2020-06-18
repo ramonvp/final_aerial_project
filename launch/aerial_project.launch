@@ -1,0 +1,116 @@
+<launch>
+  <arg name="mav_name" default="firefly"/>
+  <arg name="husky_name" default="husky"/>
+  <arg name="world_name" default="$(find aerial_project)/worlds/aerial_project_v0.world"/>  
+  <arg name="enable_logging" default="false" />
+  <arg name="enable_ground_truth" default="true" />
+  <arg name="log_file" default="$(arg mav_name)" />
+  <arg name="debug" default="false"/>
+  <arg name="gui" default="true"/>
+  <arg name="paused" default="false"/>
+  <arg name="frame_id" default="odom" />
+  <arg name="odometry" default="ground_truth/odometry" />
+  <arg name="run_controller" default="true"/>
+  <arg name="verbose" default="false"/>
+
+
+  <arg name="groundMarkerFile" default="$(find aerial_project)/cfg/groundMarkers.yaml"/>
+
+  <arg name="husky_mission_file" default="$(find aerial_project)/cfg/missions_husky/line.txt"/>
+  <!-- The following line causes gzmsg and gzerr messages to be printed to the console
+      (even when Gazebo is started through roslaunch) -->
+
+ <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models:$(find aerial_project)/models"/>
+  <env name="GAZEBO_RESOURCE_PATH" value="${GAZEBO_RESOURCE_PATH}:$(find rotors_gazebo)/models:$(find aerial_project)/models"/>
+  
+<include file="$(find gazebo_ros)/launch/empty_world.launch">  
+    <arg name="world_name" value="$(arg world_name)" /> 
+    <arg name="debug" value="$(arg debug)" />
+    <arg name="paused" value="$(arg paused)" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="verbose" value="$(arg verbose)"/>
+</include>
+ 
+  <group ns="$(arg mav_name)">
+    <include file="$(find rotors_gazebo)/launch/spawn_mav.launch">
+      <arg name="mav_name" value="$(arg mav_name)" />
+      <arg name="model" value="$(find aerial_project)/urdf/firefly_Eurecat.gazebo" />
+      <arg name="enable_logging" value="$(arg enable_logging)" />
+      <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
+      <arg name="log_file" value="$(arg log_file)"/>
+      <arg name="y" value="-2.5"/>
+      <arg name="x" value="-2.5"/>
+      <arg name="z" value="0.15"/>
+    </include>
+
+    <group if="$(arg enable_ground_truth)">
+      <param name="fake_twist/linVel_covariance" type="double" value="0.08" />
+      <param name="fake_twist/angVel_covariance" type="double" value="0.002" />
+      <node name="fake_twist_odometer" pkg="aerial_project" type="fake_twist_odometer" output="screen">
+        <remap from="/ground_truth_odometry" to="/firefly/ground_truth/odometry" />
+      </node>
+    </group>
+
+    <group if="$(arg run_controller)">
+      <node name="lee_position_controller_node" pkg="rotors_control" type="lee_position_controller_node" output="screen">
+        <rosparam command="load" file="$(find rotors_gazebo)/resource/lee_controller_$(arg mav_name).yaml" />
+        <rosparam command="load" file="$(find rotors_gazebo)/resource/$(arg mav_name).yaml" />
+        <remap from="odometry" to="ground_truth/odometry" />
+      </node>
+    </group>
+  
+    <group unless="$(arg run_controller)">
+      <node name="controller" pkg="rotors_exercise" type="controller_node" clear_params="true" output="screen">
+		  	<remap from="pose_with_covariance" to="ground_truth/pose_with_covariance"/>
+		  	<param name="filtering" type="bool" value="true" />
+		  	<param name="enable_ros_info" type="bool" value="false" /> 
+        <param name="start_pose_x" type="double" value="-2.5" /> 
+        <param name="start_pose_y" type="double" value="-2.5" /> 
+        <param name="start_pose_z" type="double" value="1.0" /> 
+		  	<rosparam file="$(find rotors_exercise)/controller.yaml"/>
+		  </node>
+
+      <node name="roll_pitch_yawrate_thrust_controller_node" pkg="rotors_control" type="roll_pitch_yawrate_thrust_controller_node" output="screen">
+        <rosparam command="load" file="$(find rotors_gazebo)/resource/roll_pitch_yawrate_thrust_controller_$(arg mav_name).yaml" />
+        <rosparam command="load" file="$(find rotors_gazebo)/resource/$(arg mav_name).yaml" />
+        <remap from="odometry" to="ground_truth/odometry" />
+      </node>
+    </group>
+    
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    <node pkg="tf" type="static_transform_publisher" name="world_odom_broadcaster" args="0 0 0 0 0 0 1 world odom 100" />
+    
+  </group>  
+
+
+    <include file="$(find husky_gazebo)/launch/spawn_husky.launch">
+        <arg name="x" default="-36.0"/>
+        <arg name="y" default="-15.0"/>
+        <arg name="z" default="0.3"/>
+        <arg name="yaw" default="0"/>
+        <arg name="laser_enabled" value="false"/>
+        <arg name="kinect_enabled" value="false"/>
+        <arg name="robot_namespace" value="$(arg husky_name)"/>
+    </include>
+
+
+  <group ns="$(arg husky_name)">
+    <node name="husky_node" pkg="aerial_project" type="husky_node">
+        <param name="mission_file" value="$(arg husky_mission_file)" /> 
+        <param name="thr_rotation_error" value="0.1" /> 
+        <param name="rotation_speed" value="1.0" /> 
+        <param name="linear_speed" value="2.0" /> 
+    </node> 
+  </group>
+  
+
+   <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
+
+
+  <!-- Mapping -->
+   <include file="$(find aerial_project)/launch/mapping.launch"/> 
+
+  <!-- Dump groundMarkers info into the parameter server -->
+  <rosparam command="load" file="$(arg groundMarkerFile)" />
+  
+</launch>

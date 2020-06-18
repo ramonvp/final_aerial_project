@@ -1,0 +1,15 @@
+material marker_husky
+
+{
+	technique
+	{
+		pass
+		{
+			texture_unit
+			{
+				texture marker_husky.png
+			}
+		}
+	}
+}
+

@@ -1,0 +1,14 @@
+material marker_103
+{
+	technique
+	{
+		pass
+		{
+			texture_unit
+			{
+				texture marker_103.png
+			}
+		}
+	}
+}
+

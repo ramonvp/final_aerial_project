@@ -1,0 +1,32 @@
+<?xml version="1.0" ?>
+<sdf version="1.4">
+  <model name="marker_8">
+    <static>1</static>
+    <link name="link_marker_8">
+      <gravity>false</gravity>
+      <visual name="visual_marker_8">
+        <geometry>
+          <box>
+            <size>0.15 0.15 0.001</size>
+            <!-- SIZE OF THE MARKER + MARGIN -->
+          </box>
+        </geometry>
+        <material>
+          <script>
+	    <uri>model://marker_8/material/scripts</uri>
+	    <uri>model://marker_8/material/textures</uri>
+            <name>marker_8</name>
+          </script>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.15 0.15 0.02</size>
+            <!-- SIZE OF THE MARKER + MARGIN -->
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

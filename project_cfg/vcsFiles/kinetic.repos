@@ -1,0 +1,65 @@
+repositories:
+  aerial_project:
+    type: git
+    url: https://github.com/AerialRobots/aerial_project
+    version: master
+  catkin_simple:
+    type: git
+    url: https://github.com/catkin/catkin_simple.git
+    version: master
+  eigen_catkin:
+    type: git
+    url: https://github.com/ethz-asl/eigen_catkin.git
+    version: master
+  eigen_checks:
+    type: git
+    url: https://github.com/ethz-asl/eigen_checks.git
+    version: master
+  gflags_catkin:
+    type: git
+    url: https://github.com/ethz-asl/gflags_catkin.git
+    version: master
+  glog_catkin:
+    type: git
+    url: https://github.com/ethz-asl/glog_catkin.git
+    version: master
+  husky:
+    type: git
+    url: https://github.com/husky/husky.git
+    version: 68a2751fda48cd3822f761d2c9b9e6d73948ba11
+  interactive_marker_twist_server:
+    type: git
+    url: https://github.com/ros-visualization/interactive_marker_twist_server.git
+    version: kinetic-devel
+  mav_comm:
+    type: git
+    url: https://github.com/ethz-asl/mav_comm.git
+    version: master
+  mavlink:
+    type: git
+    url: https://github.com/mavlink/mavlink-gbp-release.git
+    version: upstream
+  mavros:
+    type: git
+    url: https://github.com/ethz-asl/mavros.git
+    version: bb4ab15dd4884bf1495014ccebb0ff454dc23666
+  minkindr:
+    type: git
+    url: https://github.com/ethz-asl/minkindr.git
+    version: master
+  minkindr_ros:
+    type: git
+    url: https://github.com/ethz-asl/minkindr_ros.git
+    version: master
+  protobuf_catkin:
+    type: git
+    url: https://github.com/ethz-asl/protobuf_catkin.git
+    version: master
+  rotors_simulator:
+    type: git
+    url: https://github.com/ethz-asl/rotors_simulator.git
+    version: 14f2544c342763e68b1630a6466f80d79cd9168d
+  voxblox:
+    type: git
+    url: https://github.com/ethz-asl/voxblox.git
+    version: master

@@ -1,0 +1,2 @@
+int64 marker_id
+geometry_msgs/Point approximate_position

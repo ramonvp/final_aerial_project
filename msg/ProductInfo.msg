@@ -1,0 +1,3 @@
+string item_location
+int64 marker_id
+geometry_msgs/PoseWithCovariance approximate_pose
