@@ -1,7 +1,7 @@
 <launch>
   <arg name="mav_name" default="firefly"/>
   <arg name="husky_name" default="husky"/>
-  <arg name="world_name" default="$(find aerial_project)/worlds/industrial_env_final_markers_v3.world"/>  
+  <arg name="world_name" default="$(find final_aerial_project)/worlds/industrial_env_final_markers_v3.world"/>  
   <arg name="enable_logging" default="false" />
   <arg name="enable_ground_truth" default="true" />
   <arg name="log_file" default="$(arg mav_name)" />
@@ -14,14 +14,14 @@
   <arg name="verbose" default="false"/>
 
 
-  <arg name="groundMarkerFile" default="$(find aerial_project)/cfg/groundMarkers.yaml"/>
-  <arg name="dispatcherConfigFile" default="$(find aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
+  <arg name="groundMarkerFile" default="$(find final_aerial_project)/cfg/groundMarkers.yaml"/>
+  <arg name="dispatcherConfigFile" default="$(find final_aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
 
   <!-- The following line causes gzmsg and gzerr messages to be printed to the console
       (even when Gazebo is started through roslaunch) -->
 
- <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models:$(find aerial_project)/models"/>
-  <env name="GAZEBO_RESOURCE_PATH" value="${GAZEBO_RESOURCE_PATH}:$(find rotors_gazebo)/models:$(find aerial_project)/models"/>
+ <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models:$(find final_aerial_project)/models"/>
+  <env name="GAZEBO_RESOURCE_PATH" value="${GAZEBO_RESOURCE_PATH}:$(find rotors_gazebo)/models:$(find final_aerial_project)/models"/>
   
 <include file="$(find gazebo_ros)/launch/empty_world.launch">  
     <arg name="world_name" value="$(arg world_name)" /> 
@@ -34,19 +34,19 @@
   <group ns="$(arg mav_name)">
     <include file="$(find rotors_gazebo)/launch/spawn_mav.launch">
       <arg name="mav_name" value="$(arg mav_name)" />
-      <arg name="model" value="$(find aerial_project)/urdf/firefly_Eurecat.gazebo" />
+      <arg name="model" value="$(find final_aerial_project)/urdf/firefly_Eurecat.gazebo" />
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)"/>
-      <arg name="y" value="2.5"/>
-      <arg name="x" value="2.5"/>
+      <arg name="y" value="3.5"/>
+      <arg name="x" value="3.5"/>
       <arg name="z" value="0.15"/>
     </include>
 
     <group if="$(arg enable_ground_truth)">
       <param name="fake_twist/linVel_covariance" type="double" value="0.08" />
       <param name="fake_twist/angVel_covariance" type="double" value="0.002" />
-      <node name="fake_twist_odometer" pkg="aerial_project" type="fake_twist_odometer" output="screen">
+      <node name="fake_twist_odometer" pkg="final_aerial_project" type="fake_twist_odometer" output="screen">
         <remap from="/ground_truth_odometry" to="/firefly/ground_truth/odometry" />
       </node>
     </group>
@@ -95,7 +95,7 @@
   <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
 
 <!--  Mapping  -->
-   <include file="$(find aerial_project)/launch/mapping.launch"/> 
+   <include file="$(find final_aerial_project)/launch/mapping.launch"/> 
    
   <!-- Dump groundMarkers info into the parameter server -->
   <rosparam command="load" file="$(arg groundMarkerFile)" />
@@ -103,7 +103,7 @@
  <!-- parcel dispatcher --> 
   <rosparam command="load" file="$(arg dispatcherConfigFile)" />
   
-  <node name="parcel_dispatcher" pkg="aerial_project" type="delivery_station" output="screen">
+  <node name="parcel_dispatcher" pkg="final_aerial_project" type="delivery_station" output="screen">
       <remap from="drone_gt" to="firefly/ground_truth/pose"/>
       <remap from="husky_gt" to="husky/odometry/filtered"/>
       <remap from="product_feedback" to="firefly/product_feedback" />
