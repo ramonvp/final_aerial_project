@@ -6,8 +6,8 @@
 
 #include "std_msgs/Int32.h"
 
-#include "aerial_project/ProductInfo.h"
-#include "aerial_project/ProductFeedback.h"
+#include "final_aerial_project/ProductInfo.h"
+#include "final_aerial_project/ProductFeedback.h"
 
 #include "nav_msgs/Odometry.h"
 
@@ -32,7 +32,7 @@ public:
     battery_timer_pub_ = nh_.advertise<std_msgs::Int32>("/battery_timer", 1, false);
 
     // Init publishers
-    next_product_pub_ = nh_.advertise<aerial_project::ProductInfo>("/parcel_dispatcher/next_product", 1, false);
+    next_product_pub_ = nh_.advertise<final_aerial_project::ProductInfo>("/parcel_dispatcher/next_product", 1, false);
 
     // Init vars form param server info & others
     load_from_param_server(nh_private_);
@@ -66,7 +66,7 @@ private:
   // Runs when product feedback is sended by the drone. Verifies that the drone is near the pase and that the
   // id it is throwing out  corresponds with the product asked.
   // If distance constraint and id are adequate, the next product request is broadcasted
-  void product_callback(const aerial_project::ProductFeedback::ConstPtr &product_msg)
+  void product_callback(const final_aerial_project::ProductFeedback::ConstPtr &product_msg)
   {
     if ((product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched)) && drone_in_place(&check_pad_position))
     {
@@ -123,6 +123,7 @@ private:
         product_msg_out_.approximate_pose = charging_pad_pose;
         ROS_INFO("Parcel_dispatcher node: Mission has ended: Charging pad pose has been published");
       }
+
       next_product_pub_.publish(product_msg_out_);
     }
   }
@@ -155,7 +156,8 @@ private:
       battery_remaining_time = 0;
     }
 
-    battery_timer_pub_.publish(battery_remaining_time);
+    int_msg_.data = battery_remaining_time;
+    battery_timer_pub_.publish(int_msg_);
 
     checkBatteryCharged();
   }
@@ -247,7 +249,9 @@ protected:
   ros::Publisher battery_timer_pub_;
 
   // Message objects
-  aerial_project::ProductInfo product_msg_out_;
+  final_aerial_project::ProductInfo product_msg_out_;
+  std_msgs::Int32 int_msg_;
+
 
   // Pose of elements
   geometry_msgs::PoseWithCovariance husky_pose;
