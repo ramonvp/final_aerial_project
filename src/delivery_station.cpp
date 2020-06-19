@@ -27,7 +27,6 @@ public:
 
     // Init subscribers
     drone_sub_ = nh_.subscribe("/drone_gt", 1, &dispatcher_station_node::drone_callback, this);
-    //husky_sub_ = nh_.subscribe("/husky_gt", 1, &dispatcher_station_node::husky_callback, this);
     product_pos_ = nh_.subscribe("/product_feedback", 1, &dispatcher_station_node::product_callback, this);
     battery_timer_pub_ = nh_.advertise<std_msgs::Int32>("/battery_timer", 1, false);
 
@@ -57,11 +56,6 @@ private:
     next_product_pub_.publish(product_msg_out_);
   }
 
-  /*// Retrives the husky pose and stores it for later use
-  void husky_callback(const nav_msgs::Odometry::ConstPtr &odom_msg)
-  {
-    husky_pose = odom_msg->pose;
-  } */
 
   // Runs when product feedback is sended by the drone. Verifies that the drone is near the pase and that the
   // id it is throwing out  corresponds with the product asked.
@@ -83,19 +77,6 @@ private:
         // TODO: Register product found
       }
     }
-    /* if ((product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched)) && drone_in_place(&check_pad_position))
-    {
-      ROS_INFO("Parcel_dispatcher node: Product Feedback received, publishing new request:");
-      current_product_dispatched++;
-      fill_parcel_msg();
-      // TODO: Register product found
-    }
-    if ((product_msg->marker_id != products_to_dispatch_id.at(current_product_dispatched)) && drone_in_place(&check_pad_position))
-    {
-      ROS_INFO("Parcel_dispatcher node: Recalculating target position");
-      fill_parcel_msg();
-      // TODO: Register product found
-    } */
   }
 
   // Function that check for distance between drone and check pads
@@ -263,7 +244,6 @@ private:
 protected:
   // Subscriber objects
   ros::Subscriber drone_sub_;
-  // ros::Subscriber husky_sub_;
   ros::Subscriber product_pos_;
   ros::Timer battery_timer_;
 
