@@ -27,7 +27,7 @@ public:
 
     // Init subscribers
     drone_sub_ = nh_.subscribe("/drone_gt", 1, &dispatcher_station_node::drone_callback, this);
-    husky_sub_ = nh_.subscribe("/husky_gt", 1, &dispatcher_station_node::husky_callback, this);
+    //husky_sub_ = nh_.subscribe("/husky_gt", 1, &dispatcher_station_node::husky_callback, this);
     product_pos_ = nh_.subscribe("/product_feedback", 1, &dispatcher_station_node::product_callback, this);
     battery_timer_pub_ = nh_.advertise<std_msgs::Int32>("/battery_timer", 1, false);
 
@@ -57,18 +57,33 @@ private:
     next_product_pub_.publish(product_msg_out_);
   }
 
-  // Retrives the husky pose and stores it for later use
+  /*// Retrives the husky pose and stores it for later use
   void husky_callback(const nav_msgs::Odometry::ConstPtr &odom_msg)
   {
     husky_pose = odom_msg->pose;
-  }
+  } */
 
   // Runs when product feedback is sended by the drone. Verifies that the drone is near the pase and that the
   // id it is throwing out  corresponds with the product asked.
   // If distance constraint and id are adequate, the next product request is broadcasted
   void product_callback(const final_aerial_project::ProductFeedback::ConstPtr &product_msg)
   {
-    if ((product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched)) && drone_in_place(&check_pad_position))
+    if drone_in_place(&check_pad_position)
+    {
+      if (product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched))
+      {
+        ROS_INFO("Parcel_dispatcher node: Product Feedback received, publishing new request:");
+        current_product_dispatched++;
+        fill_parcel_msg();
+      }
+      else
+      {
+        ROS_INFO("Parcel_dispatcher node: Recalculating target position");
+        fill_parcel_msg();
+        // TODO: Register product found
+      }
+    }
+    /* if ((product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched)) && drone_in_place(&check_pad_position))
     {
       ROS_INFO("Parcel_dispatcher node: Product Feedback received, publishing new request:");
       current_product_dispatched++;
@@ -80,7 +95,7 @@ private:
       ROS_INFO("Parcel_dispatcher node: Recalculating target position");
       fill_parcel_msg();
       // TODO: Register product found
-    }
+    } */
   }
 
   // Function that check for distance between drone and check pads
@@ -165,8 +180,7 @@ private:
   // function that checks if the drone is close by the location of the charging pad, thus charging
   void checkBatteryCharged()
   {
-    Eigen::Vector3d pad_pose{charging_pad_pose.pose.position.x, charging_pad_pose.pose.position.y, charging_pad_pose.pose.position.z};
-    if (drone_in_place(&pad_pose))
+    if (drone_in_place(&charging_pad_position))
     {
       battery_remaining_time = battery_time * 60;
       battery_empty = false;
@@ -176,6 +190,8 @@ private:
   // Handy function for initialising covariance matrices from parameters
   void load_from_param_server(ros::NodeHandle &nh_private_)
   {
+
+    // get detection threshold
     double detection_threshold_default = 1.0;
 
     if (nh_private_.hasParam("/parcel_dispatcher/detection_threshold"))
@@ -188,6 +204,7 @@ private:
       ROS_INFO("Parcel_dispatcher node: detection_threshold not set in the parameter server using a default one");
     }
 
+    // get targets info
     nh_private_.getParam("/parcel_dispatcher/numberOfTargets", number_of_products_to_dispatch);
     products_to_dispatch_id.resize(number_of_products_to_dispatch);
     products_to_dispatch_location.resize(number_of_products_to_dispatch);
@@ -195,6 +212,7 @@ private:
     nh_private_.getParam("/parcel_dispatcher/marker_id", products_to_dispatch_id);
     nh_private_.getParam("/parcel_dispatcher/item_location", products_to_dispatch_location);
 
+    // get interesting places info
     std::vector<double> dummy3DVector{0.0, 0.0, 0.0};
     std::vector<double> dummy7DVector{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
@@ -204,10 +222,15 @@ private:
 
     nh_private_.getParam("/parcel_dispatcher/charging_pad_pose", dummy7DVector);
     charging_pad_pose = pose_with_covariance_from_7D_vec(dummy7DVector);
+    charging_pad_position = << dummy7DVector.at(0), dummy7DVector.at(1), dummy7DVector.at(2);
 
     nh_private_.getParam("/parcel_dispatcher/shelve_pose", dummy7DVector);
     shelve_pose = pose_with_covariance_from_7D_vec(dummy7DVector);
 
+    nh_private_.getParam("/parcel_dispatcher/husky_pose", dummy7DVector);
+    husky_pose = pose_with_covariance_from_7D_vec(dummy7DVector);
+
+    //get battery info
     if (nh_private_.hasParam("/parcel_dispatcher/battery_time"))
     {
       nh_private_.getParam("/parcel_dispatcher/battery_time", battery_time);
@@ -240,7 +263,7 @@ private:
 protected:
   // Subscriber objects
   ros::Subscriber drone_sub_;
-  ros::Subscriber husky_sub_;
+  // ros::Subscriber husky_sub_;
   ros::Subscriber product_pos_;
   ros::Timer battery_timer_;
 
@@ -252,7 +275,6 @@ protected:
   final_aerial_project::ProductInfo product_msg_out_;
   std_msgs::Int32 int_msg_;
 
-
   // Pose of elements
   geometry_msgs::PoseWithCovariance husky_pose;
   geometry_msgs::PoseWithCovariance shelve_pose;
@@ -261,6 +283,7 @@ protected:
 
   // bases info to load from parameter server
   Eigen::Vector3d check_pad_position;
+  Eigen::Vector3d charging_pad_position;
 
   // Products to dispatch
   int number_of_products_to_dispatch;
