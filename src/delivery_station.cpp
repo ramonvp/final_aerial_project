@@ -68,7 +68,7 @@ private:
   // If distance constraint and id are adequate, the next product request is broadcasted
   void product_callback(const final_aerial_project::ProductFeedback::ConstPtr &product_msg)
   {
-    if drone_in_place(&check_pad_position)
+    if (drone_in_place(&check_pad_position))
     {
       if (product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched))
       {
