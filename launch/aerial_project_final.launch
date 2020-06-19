@@ -13,7 +13,6 @@
   <arg name="run_controller" default="true"/>
   <arg name="verbose" default="false"/>
 
-
   <arg name="groundMarkerFile" default="$(find final_aerial_project)/cfg/groundMarkers.yaml"/>
   <arg name="dispatcherConfigFile" default="$(find final_aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
 
@@ -91,7 +90,6 @@
     <arg name="robot_namespace" value="$(arg husky_name)"/>
   </include> 
 
-  
   <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
 
 <!--  Mapping  -->
@@ -107,6 +105,7 @@
       <remap from="drone_gt" to="firefly/ground_truth/pose"/>
       <remap from="husky_gt" to="husky/odometry/filtered"/>
       <remap from="product_feedback" to="firefly/product_feedback" />
+      <remap from="battery_timer" to="firefly/battery_timer" />
   </node> 
   
 </launch>
