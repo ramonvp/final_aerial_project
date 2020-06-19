@@ -222,7 +222,7 @@ private:
 
     nh_private_.getParam("/parcel_dispatcher/charging_pad_pose", dummy7DVector);
     charging_pad_pose = pose_with_covariance_from_7D_vec(dummy7DVector);
-    charging_pad_position = << dummy7DVector.at(0), dummy7DVector.at(1), dummy7DVector.at(2);
+    charging_pad_position  << dummy7DVector.at(0), dummy7DVector.at(1), dummy7DVector.at(2);
 
     nh_private_.getParam("/parcel_dispatcher/shelve_pose", dummy7DVector);
     shelve_pose = pose_with_covariance_from_7D_vec(dummy7DVector);
