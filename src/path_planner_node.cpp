@@ -1,4 +1,4 @@
-#include "aerial_project/path_planner.h"
+#include "final_aerial_project/path_planner.h"
 
 int main(int argc, char **argv)
 {
@@ -8,9 +8,21 @@ int main(int argc, char **argv)
     FLAGS_alsologtostderr = true;
 
     ROS_INFO("Running path planner node...");
-    voxblox::PathPlanner planner_node(nh, nh_private);
+    final_aerial_project::PathPlanner planner_node(nh, nh_private);
 
-    ros::spin();
+    ros::Rate rate(1.0);
+
+    while(ros::ok())
+    {
+        ros::spinOnce();
+
+        planner_node.loop();
+
+        rate.sleep();
+
+    }
+
+    //ros::spin();
     
     return 0;
 }

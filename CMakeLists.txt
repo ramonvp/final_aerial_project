@@ -20,6 +20,15 @@ find_package(catkin REQUIRED COMPONENTS
   eigen_catkin
   mav_msgs
   message_generation
+  fiducial_msgs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  trajectory_msgs
+  ompl
+  actionlib
+  actionlib_msgs
+  dynamic_reconfigure
 )
 
 ## System dependencies are found with CMake's conventions
@@ -60,28 +69,29 @@ add_message_files(
   FILES
   ProductInfo.msg
   ProductFeedback.msg
+  PID.msg
  )
 
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  MakePlan.srv
+)
 
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
+add_action_files(
+  FILES
+  MoveUAV.action
+)
 
 generate_messages(
-    DEPENDENCIES
-    std_msgs
-    geometry_msgs  # Or other packages containing msgs
- )
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+  trajectory_msgs
+  actionlib_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -97,11 +107,7 @@ generate_messages(
 ##   * uncomment the "generate_dynamic_reconfigure_options" section below
 ##     and list every .cfg file to be processed
 
-## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+generate_dynamic_reconfigure_options(cfg/Controller.cfg)
 
 ###################################
 ## catkin specific configuration ##
@@ -113,10 +119,11 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS ${Eigen_INCLUDE_DIRS}
-  LIBRARIES
-  CATKIN_DEPENDS roscpp std_msgs tf geometry_msgs nav_msgs roscpp sensor_msgs
+  INCLUDE_DIRS ${Eigen_INCLUDE_DIRS} include
+  LIBRARIES path_planner move_uav
+  CATKIN_DEPENDS roscpp std_msgs tf geometry_msgs nav_msgs roscpp sensor_msgs actionlib actionlib_msgs message_runtime dynamic_reconfigure
 #  DEPENDS system_lib
+#  DEPENDS actionlib
 )
 
 ###########
@@ -128,17 +135,29 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-)
-include_directories(
-  ${catkin_INCLUDE_DIRS}
+  ${OMPL_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
-  "/usr/include/eigen3"
+  ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
+  #cfg/cpp
 )
 
 ## Declare a C++ library
-add_library(${PROJECT_NAME}
-   src/path_planner.cpp
- )
+add_library(path_planner
+    src/path_planner.cpp
+    src/voxblox_ompl_rrt.cpp
+)
+target_link_libraries(path_planner
+  ${OMPL_LIBRARIES}
+  ${catkin_LIBRARIES}
+)
+
+add_library(move_uav src/move_uav.cpp)
+target_link_libraries(move_uav
+  ${Boost_LIBRARIES}
+  ${catkin_LIBRARIES}
+)
+add_dependencies(move_uav ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -166,13 +185,33 @@ add_dependencies(  delivery_station ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin
 target_link_libraries( fake_twist_odometer ${catkin_LIBRARIES})
 target_link_libraries( delivery_station ${catkin_LIBRARIES})
 
-add_executable(path_planner_node
-        src/path_planner_node.cpp)
-target_link_libraries(path_planner_node
-        ${catkin_LIBRARIES}
-        ${PROJECT_NAME}
-        )
+add_executable(path_planner_node src/path_planner_node.cpp)
+target_link_libraries(path_planner_node path_planner)
 
+add_executable(move_uav_node src/move_uav_node.cpp)
+add_dependencies(move_uav_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(move_uav_node move_uav path_planner)
+
+add_executable(teleop_node src/teleop.cpp)
+target_link_libraries(teleop_node ${catkin_LIBRARIES})
+
+#add_executable(aruco_pos_node src/aruco_pos.cpp)
+#target_link_libraries(aruco_pos_node ${catkin_LIBRARIES})
+
+add_executable(imu_fix_node src/imu_fix.cpp)
+target_link_libraries(imu_fix_node ${catkin_LIBRARIES})
+
+add_executable(mission_planner src/mission.cpp)
+target_link_libraries(mission_planner ${catkin_LIBRARIES})
+
+add_executable(controller_node src/control.cpp)
+add_dependencies(controller_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(controller_node ${PROJECT_NAME}_gencfg)
+target_link_libraries(controller_node ${catkin_LIBRARIES})
+
+add_executable(estimator_node src/estimator.cpp)
+add_dependencies(estimator_node ${catkin_EXPORTED_TARGETS})
+target_link_libraries(estimator_node ${catkin_LIBRARIES})
 
 #############
 ## Install ##

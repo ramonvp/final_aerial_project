@@ -12,6 +12,7 @@
   <arg name="odometry" default="ground_truth/odometry" />
   <arg name="run_controller" default="true"/>
   <arg name="verbose" default="false"/>
+  <arg name="debug_pid" default="false"/>
 
   <arg name="groundMarkerFile" default="$(find final_aerial_project)/cfg/groundMarkers.yaml"/>
   <arg name="dispatcherConfigFile" default="$(find final_aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
@@ -39,11 +40,11 @@
       <arg name="log_file" value="$(arg log_file)"/>
       <arg name="y" value="3.5"/>
       <arg name="x" value="3.5"/>
-      <arg name="z" value="0.15"/>
+      <arg name="z" value="0.1"/>
     </include>
 
     <group if="$(arg enable_ground_truth)">
-      <param name="fake_twist/linVel_covariance" type="double" value="0.08" />
+      <param name="fake_twist/linVel_covariance" type="double" value="0.02" />
       <param name="fake_twist/angVel_covariance" type="double" value="0.002" />
       <node name="fake_twist_odometer" pkg="final_aerial_project" type="fake_twist_odometer" output="screen">
         <remap from="/ground_truth_odometry" to="/firefly/ground_truth/odometry" />
@@ -59,15 +60,25 @@
     </group>
   
     <group unless="$(arg run_controller)">
-      <node name="controller" pkg="rotors_exercise" type="controller_node" clear_params="true" output="screen">
-		  	<remap from="pose_with_covariance" to="ground_truth/pose_with_covariance"/>
-		  	<param name="filtering" type="bool" value="true" />
-		  	<param name="enable_ros_info" type="bool" value="false" /> 
-        <param name="start_pose_x" type="double" value="3.5" /> 
-        <param name="start_pose_y" type="double" value="3.5" /> 
-        <param name="start_pose_z" type="double" value="0.3" /> 
-		  	<rosparam file="$(find rotors_exercise)/controller.yaml"/>
-		  </node>
+      <node name="controller" pkg="final_aerial_project" type="controller_node" clear_params="true" output="screen">
+        <!--remap from="pose_with_covariance" to="ground_truth/pose_with_covariance"/-->
+        <remap from="odom" to="$(arg odometry)"/>
+        <param name="filtering" value="true" />
+        <param name="enable_ros_info" value="false" />
+        <param name="start_pose_x" value="3.5" />
+        <param name="start_pose_y" value="3.5" />
+        <param name="start_pose_z" value="0.1" />
+        <param name="waypoint_accuracy" value="0.5"/>
+        <param name="yaw_accuracy" value="0.1"/>
+        <param name="debug_pid" value="$(arg debug_pid)"/>
+        <rosparam file="$(find final_aerial_project)/cfg/controller.yaml"/>
+      </node>
+
+      <group if="$(arg debug_pid)">
+        <node name="plotjuggler" pkg="plotjuggler" type="PlotJuggler" args="\-\-layout $(find final_aerial_project)/rviz/plotjuggler.xml" output="screen"/>
+        <node name="dynamic_reconfigure" pkg="rqt_reconfigure" type="rqt_reconfigure" output="screen"/>
+      </group>
+
 
       <node name="roll_pitch_yawrate_thrust_controller_node" pkg="rotors_control" type="roll_pitch_yawrate_thrust_controller_node" output="screen">
         <rosparam command="load" file="$(find rotors_gazebo)/resource/roll_pitch_yawrate_thrust_controller_$(arg mav_name).yaml" />
@@ -78,9 +89,11 @@
     
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
     <node pkg="tf" type="static_transform_publisher" name="world_odom_broadcaster" args="0 0 0 0 0 0 1 world odom 100" />
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
     
-  </group>  
-<include file="$(find husky_gazebo)/launch/spawn_husky.launch">
+  </group>
+
+  <include file="$(find husky_gazebo)/launch/spawn_husky.launch">
     <arg name="x" default="6.0"/>
     <arg name="y" default="25.0"/>
     <arg name="z" default="0.0"/>
@@ -92,13 +105,13 @@
 
   <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
 
-<!--  Mapping  -->
-   <include file="$(find final_aerial_project)/launch/mapping.launch"/> 
+  <!--  Mapping  -->
+  <include file="$(find final_aerial_project)/launch/mapping.launch"/>
    
   <!-- Dump groundMarkers info into the parameter server -->
   <rosparam command="load" file="$(arg groundMarkerFile)" />
 
- <!-- parcel dispatcher --> 
+  <!-- parcel dispatcher -->
   <rosparam command="load" file="$(arg dispatcherConfigFile)" />
   
   <node name="parcel_dispatcher" pkg="final_aerial_project" type="delivery_station" output="screen">
@@ -108,4 +121,6 @@
       <remap from="battery_timer" to="firefly/battery_timer" />
   </node> 
   
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find final_aerial_project)/rviz/default.rviz" />
+
 </launch>

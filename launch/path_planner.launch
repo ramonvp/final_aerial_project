@@ -1,0 +1,36 @@
+<launch>
+    <arg name="voxel_size" default="0.2" />
+    <arg name="voxels_per_side" default="16" />
+    <arg name="world_frame" default="odom" />
+    <arg name="try_rrt" default="true" />
+
+    <node 
+        name         = "move_uav_node"
+    	pkg          = "final_aerial_project" 
+        type         = "move_uav_node"
+    	clear_params = "true" 
+    	output       = "screen">
+
+          <remap from="move_uav_node/esdf_map_in" to="/firefly/esdf_map" />
+          <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+          <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+          <param name="update_mesh_every_n_sec" value="0.0" />
+          <param name="world_frame" value="$(arg world_frame)" />
+
+            <!-- Params used by path_planner -->
+            <param name = "collision_radius"  value="0.5"/>
+            <param name = "grid_x"            value="10"/>
+            <param name = "grid_y"            value="10"/>
+            <param name = "grid_z"            value="5"/>
+            <param name = "grid_separation"   value="0.5"/>
+            <param name = "try_rrt"           value="$(arg try_rrt)"/>
+            <param name = "max_z"             value="1.5"/>
+
+            <param name = "distance_gain"     value="1.0"/>
+            <param name = "angle_gain"        value="4.0"/>
+            <param name = "obstacle_gain"     value="4.0"/>
+    </node>
+
+    <!--include file="$(find final_aerial_project)/launch/rrt_planner.launch" /-->
+
+</launch>

@@ -1,0 +1,9 @@
+<launch>
+    <include file="$(find aruco_detect)/launch/aruco_detect.launch">
+        <arg name="camera" value="/firefly/camera_ventral" />
+        <arg name="image" value="image_raw" />
+        <arg name="fiducial_len" value="0.15" />
+        <arg name="dictionary" value="6" />
+    </include>
+</launch>
+

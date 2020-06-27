@@ -1,0 +1,11 @@
+# Goal
+geometry_msgs/PoseStamped target_pose
+---
+# Result
+int32 RESULT_SUCCESS = 0        # UAV reached target pose
+int32 RESULT_ERR_NO_PLAN = -1   # Planner could not determine a valid flight plan
+int32 RESULT_ERR_LOST = -2      # Action aborted because no localization available
+int32 result
+---
+# Feedback
+float64 pending_distance

@@ -1,0 +1,17 @@
+<launch>
+
+    <arg name="joy_dev" default="/dev/input/js1" />
+
+    <node pkg="joy" type="joy_node" name="joy_node" output="screen">
+        <param name="dev" value="$(arg joy_dev)" />
+    </node>
+
+    <node pkg="final_aerial_project" type="teleop_node" name="teleop_node" output="screen">
+        <param name="scale_x" value="0.5"/>
+        <param name="scale_y" value="0.5"/>
+        <param name="scale_z" value="0.5"/>
+        <param name="scale_yaw" value="1.0"/>
+    </node>
+
+
+</launch>

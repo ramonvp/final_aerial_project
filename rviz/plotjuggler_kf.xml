@@ -1,0 +1,417 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root version="2.3.8">
+ <tabbed_widget parent="main_window" name="Main Window">
+  <plotmatrix rows="3" columns="1" tab_name="Position Comparison">
+   <plot col="0" row="0">
+    <range left="0.002000" right="17.136000" bottom="-0.234757" top="4.514787"/>
+    <limitY/>
+    <curve name="/firefly/ground_truth/odometry/pose/position/x" G="196" R="76" B="241" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/pose/position/x" G="255" R="47" B="14" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/x" G="26" R="201" B="161" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="1">
+    <range left="0.002000" right="17.136000" bottom="-0.074366" top="3.679222"/>
+    <limitY/>
+    <curve name="/firefly/ground_truth/odometry/pose/position/y" G="160" R="64" B="228" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/pose/position/y" G="241" R="77" B="76" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/y" G="76" R="241" B="193" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="2">
+    <range left="0.002000" right="17.136000" bottom="-0.477892" top="0.175567"/>
+    <limitY/>
+    <curve name="/firefly/ground_truth/odometry/pose/position/z" G="158" R="23" B="207" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/pose/position/z" G="221" R="33" B="42" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/z" G="23" R="207" B="157" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+  </plotmatrix>
+  <plotmatrix rows="3" columns="1" tab_name="plot">
+   <plot col="0" row="0">
+    <range left="0.002000" right="4.408000" bottom="0.587698" top="0.624487"/>
+    <limitY/>
+    <curve name="/firefly/odom_filtered/pose/covariance/[0,0]" G="39" R="214" B="40" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="1">
+    <range left="0.002000" right="4.408000" bottom="0.587698" top="0.624487"/>
+    <limitY/>
+    <curve name="/firefly/odom_filtered/pose/covariance/[1,1]" G="201" R="26" B="56" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="2">
+    <range left="0.002000" right="4.408000" bottom="0.587698" top="0.624487"/>
+    <limitY/>
+    <curve name="/firefly/odom_filtered/pose/covariance/[2,2]" G="127" R="255" B="14" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+  </plotmatrix>
+  <plotmatrix rows="3" columns="1" tab_name="plot">
+   <plot col="0" row="0">
+    <range left="0.002000" right="4.408000" bottom="-0.535199" top="0.400938"/>
+    <limitY/>
+    <curve name="/firefly/fake_twist/twist/twist/linear/x" G="189" R="188" B="34" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/x" G="127" R="255" B="14" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="1">
+    <range left="0.002000" right="4.408000" bottom="-0.370475" top="0.436206"/>
+    <limitY/>
+    <curve name="/firefly/fake_twist/twist/twist/linear/y" G="119" R="31" B="180" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/y" G="189" R="188" B="34" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="2">
+    <range left="0.002000" right="4.408000" bottom="-0.398767" top="0.367004"/>
+    <limitY/>
+    <curve name="/firefly/fake_twist/twist/twist/linear/z" G="39" R="214" B="40" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/z" G="127" R="255" B="14" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+  </plotmatrix>
+  <plotmatrix rows="2" columns="1" tab_name="plot">
+   <plot col="0" row="0">
+    <range left="0.002000" right="4.408000" bottom="0.587698" top="0.624487"/>
+    <limitY/>
+    <curve name="/firefly/odom_filtered/pose/covariance/[0,0]" G="76" R="241" B="193" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="1">
+    <range left="0.002000" right="4.408000" bottom="0.000000" top="5.000000"/>
+    <limitY min="0" max="5"/>
+    <curve name="/firefly/ground_truth/odometry/pose/position/x" G="39" R="214" B="40" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/pose/position/x" G="201" R="26" B="56" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+  </plotmatrix>
+  <plotmatrix rows="3" columns="1" tab_name="X">
+   <plot col="0" row="0">
+    <range left="25.308000" right="55.309000" bottom="0.000000" top="10.000000"/>
+    <limitY min="0" max="10"/>
+    <curve name="/firefly/ground_truth/pose_with_covariance/pose/pose/position/x" G="76" R="241" B="193" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/pose/position/x" G="201" R="26" B="56" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="1">
+    <range left="25.308000" right="55.308000" bottom="-4.000000" top="4.000000"/>
+    <limitY min="-4" max="4"/>
+    <curve name="/firefly/fake_twist/twist/twist/linear/x" G="189" R="188" B="34" custom_transform="noTransform"/>
+    <curve name="/firefly/ground_truth/odometry/twist/linear/x" G="103" R="148" B="189" custom_transform="noTransform"/>
+    <curve name="/firefly/odom_filtered/twist/linear/x" G="127" R="255" B="14" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+   <plot col="0" row="2">
+    <range left="25.309000" right="55.309000" bottom="-1.000000" top="1.000000"/>
+    <limitY min="-1" max="1"/>
+    <curve name="/firefly/imu/linear_acceleration/x" G="127" R="255" B="14" custom_transform="noTransform"/>
+    <transform value="noTransform"/>
+   </plot>
+  </plotmatrix>
+  <currentPlotMatrix index="4"/>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="1"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <!-- - - - - - - - - - - - - - - -->
+ <Plugins>
+  <plugin ID="DataLoad CSV">
+   <default time_axis=""/>
+  </plugin>
+  <plugin ID="DataLoad ROS bags">
+   <use_header_stamp value="false"/>
+   <use_renaming_rules value="true"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+  </plugin>
+  <plugin ID="DataLoad ULog"/>
+  <plugin ID="ROS Topic Subscriber">
+   <use_header_stamp value="false"/>
+   <use_renaming_rules value="true"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+  </plugin>
+  <plugin ID="ROS /rosout Visualization" status="idle"/>
+  <plugin ID="ROS Topic Re-Publisher" status="idle"/>
+ </Plugins>
+ <!-- - - - - - - - - - - - - - - -->
+ <previouslyLoaded_Datafiles/>
+ <previouslyLoaded_Streamer name="ROS Topic Subscriber"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <customMathEquations/>
+ <snippets>
+  <snippet language="JS" name="1order_lowpass">
+   <global>var prevY = 0
+var alpha = 0.5</global>
+   <equation>prevY = alpha * value + (1.-alpha) * prevY
+
+return prevY</equation>
+  </snippet>
+  <snippet language="JS" name="1order_lowpass__">
+   <global>var prevY = 0
+var alpha = 2</global>
+   <equation>prevY = alpha * value + (1.-alpha) * prevY
+
+return prevY</equation>
+  </snippet>
+  <snippet language="JS" name="1st_derivative">
+   <global>var prevX = 0
+var prevY = 0</global>
+   <equation>dx = time - prevX
+dy = value - prevY
+prevX = time
+prevY = value
+
+return dy/dx</equation>
+  </snippet>
+  <snippet language="JS" name="1st_order_lowpass">
+   <global>var prevY = 0
+var alpha = 0.1</global>
+   <equation>prevY = alpha * value + (1.-alpha) * prevY
+
+return prevY</equation>
+  </snippet>
+  <snippet language="JS" name="2D_velocity">
+   <global>var prev_x = 0
+var prev_y = 0
+var prev_t = 0</global>
+   <equation>X = $$your_odometry/position/x$$
+Y = $$your_odometry/position/y$$
+
+var dist = sqrt( (X-prev_x)*(X-prev_x) + (Y-prev_y)*(Y-prev_y) )
+var dT = time - prev_t
+
+prev_x = X
+prev_y = Y
+prev_t = time
+
+return dist / dT</equation>
+  </snippet>
+  <snippet language="JS" name="&lt;zx&lt;z">
+   <global>var prevY = 1
+var alpha = 0.1</global>
+   <equation>prevY = alpha * value + (1.-alpha) * prevY
+
+return prevY</equation>
+  </snippet>
+  <snippet language="JS" name="average_two_curves">
+   <global></global>
+   <equation>a = $$PLOT_A$$
+b = $$PLOT_B$$
+
+return (a+b)/2</equation>
+  </snippet>
+  <snippet language="JS" name="dji_yaw">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToYaw(x, y, z, w)
+{
+  // yaw (z-axis rotation)
+  t1 = 2.0 * (w * z + x * y);
+  t2 = 1.0 - 2.0 * (y * y + z * z);
+  yaw = Math.atan2(t1, t2);
+
+  return yaw
+}</global>
+   <equation>w = $$/msg_adapter/dji_imu/orientation/w$$
+
+x = $$/msg_adapter/dji_imu/orientation/x$$
+
+y = $$/msg_adapter/dji_imu/orientation/y$$
+
+z = $$/msg_adapter/dji_imu/orientation/z$$
+return quaternionToYaw(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="integral">
+   <global>var integral = 0</global>
+   <equation>integral += value
+return integral</equation>
+  </snippet>
+  <snippet language="JS" name="offset_x_hedgehog">
+   <global></global>
+   <equation>return 2.706257+value*-1</equation>
+  </snippet>
+  <snippet language="JS" name="offset_x_mov_beacon">
+   <global></global>
+   <equation>return 3.133+value*-1</equation>
+  </snippet>
+  <snippet language="JS" name="offset_y_hedgehog">
+   <global></global>
+   <equation>return value-3.186786</equation>
+  </snippet>
+  <snippet language="JS" name="offset_y_mov_beacon">
+   <global></global>
+   <equation>return value-2.86154</equation>
+  </snippet>
+  <snippet language="JS" name="offset_yaw">
+   <global></global>
+   <equation>return value-85.69</equation>
+  </snippet>
+  <snippet language="JS" name="offset_z">
+   <global></global>
+   <equation>return value+0.062</equation>
+  </snippet>
+  <snippet language="JS" name="pitch">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToPitch(x, y, z, w)
+{
+  // pitch (z-axis rotation)
+  t1 = 2.0 * (w * y - z * x);
+  pitch = Math.asin(t1);
+
+  return pitch
+}</global>
+   <equation>w = $$/dji_sdk/imu/orientation/w$$
+
+x = $$/dji_sdk/imu/orientation/x$$
+
+y = $$/dji_sdk/imu/orientation/y$$
+
+z = $$/dji_sdk/imu/orientation/z$$
+
+return quaternionToPitch(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="pitch_from_q">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToPitch(x, y, z, w)
+{
+  // pitch 
+  t1 = 2.0 * (w * y - z * x);
+  pitch = Math.asin(t1);
+
+  return pitch
+}</global>
+   <equation>return quaternionToPitch(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="rad_to_deg">
+   <global></global>
+   <equation>return value*180/3.1417</equation>
+  </snippet>
+  <snippet language="JS" name="remove_offset">
+   <global>var is_first = true
+var first_value = 0</global>
+   <equation>if (is_first)
+{
+  is_first = false
+  first_value = value
+}
+
+return value - first_value</equation>
+  </snippet>
+  <snippet language="JS" name="roll">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToRoll(x, y, z, w)
+{
+  // roll (z-axis rotation)
+  t1 = 2.0 * (w * x + z * y);
+  t2 = 1.0 - 2.0 * (y * y + y * y);
+  roll = Math.atan2(t1, t2);
+
+  return roll
+}</global>
+   <equation>w = $$/dji_sdk/imu/orientation/w$$
+
+x = $$/dji_sdk/imu/orientation/x$$
+
+y = $$/dji_sdk/imu/orientation/y$$
+
+z = $$/dji_sdk/imu/orientation/z$$
+
+return quaternionToRoll(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="roll_from_q">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToroll(x, y, z, w)
+{
+  // roll 
+  t1 = 2.0 * (w * x + z * y);
+  t2 = 1.0 - 2.0 * (y * y + y * y);
+  roll = Math.atan2(t1, t2);
+
+  return roll
+}</global>
+   <equation>return quaternionToroll(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="roll_t265">
+   <global></global>
+   <equation>return value*2</equation>
+  </snippet>
+  <snippet language="JS" name="sum_A_B">
+   <global></global>
+   <equation>return $$PLOT_A$$ + $$PLOT_B$$</equation>
+  </snippet>
+  <snippet language="JS" name="to_degrees">
+   <global></global>
+   <equation>return value*180/3.1416</equation>
+  </snippet>
+  <snippet language="JS" name="x_mm_to_gt">
+   <global></global>
+   <equation>return value-2.86</equation>
+  </snippet>
+  <snippet language="JS" name="y_mm_to_gt">
+   <global></global>
+   <equation>return value+3.13</equation>
+  </snippet>
+  <snippet language="JS" name="yaw">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+
+x = $$/vrpn_client_node/base_link/pose/pose/orientation/x$$
+z = $$/vrpn_client_node/base_link/pose/pose/orientation/z$$
+y = $$/vrpn_client_node/base_link/pose/pose/orientation/y$$
+w = $$/vrpn_client_node/base_link/pose/pose/orientation/w$$
+
+
+function quaternionToYaw(x, y, z, w)
+{
+  // yaw (z-axis rotation)
+  t1 = 2.0 * (w * z + x * y);
+  t2 = 1.0 - 2.0 * (y * y + z * z);
+  yaw = Math.atan2(t1, t2);
+
+  return yaw
+}</global>
+   <equation>return quaternionToYaw(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="yaw_dji">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+
+x = $$/msg_adapter/dji_imu/orientation/x$$
+z = $$/msg_adapter/dji_imu/orientation/z$$
+y = $$/msg_adapter/dji_imu/orientation/y$$
+w = $$/msg_adapter/dji_imu/orientation/w$$
+
+
+function quaternionToYaw(x, y, z, w)
+{
+  // yaw (z-axis rotation)
+  t1 = 2.0 * (w * z + x * y);
+  t2 = 1.0 - 2.0 * (y * y + z * z);
+  yaw = Math.atan2(t1, t2);
+
+  return yaw
+}</global>
+   <equation>return quaternionToYaw(x, y, z, w);</equation>
+  </snippet>
+  <snippet language="JS" name="yaw_from_quaternion">
+   <global>// source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+function quaternionToYaw(x, y, z, w)
+{
+  // yaw (z-axis rotation)
+  t1 = 2.0 * (w * z + x * y);
+  t2 = 1.0 - 2.0 * (y * y + z * z);
+  yaw = Math.atan2(t1, t2);
+
+  return yaw
+}</global>
+   <equation>return quaternionToYaw(x, y, z, w);</equation>
+  </snippet>
+ </snippets>
+ <!-- - - - - - - - - - - - - - - -->
+</root>
+

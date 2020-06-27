@@ -1,0 +1,26 @@
+gravity_compensation: 15.0
+integral_window_enable: False
+x_kp: 0.5
+x_ki: 0.5
+x_kd: 0.5
+x_integral_limit: 0.1
+x_integral_window_size: 500
+y_kp: 0.5
+y_ki: 0.5
+y_kd: 0.5
+y_integral_limit: 0.1
+y_integral_window_size: 500
+z_kp: 5.0
+z_ki: 4.0
+z_kd: 7.0
+z_integral_limit: 0.5
+z_integral_window_size: 1000
+yaw_kp: 10.0 # 3.0
+yaw_ki: 0.0
+yaw_kd: 10.0 # 5.0
+yaw_integral_limit: 0.5
+yaw_integral_window_size: 500
+x_vel_limit: 0.2
+y_vel_limit: 0.2
+z_vel_limit: 3.0
+yaw_limit: 10.0  # 2.0

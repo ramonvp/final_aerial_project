@@ -58,6 +58,11 @@
   <depend>tf</depend>
   <depend>gazebo_msgs</depend>
   <depend>gazebo_plugins</depend>
+  <depend>ompl</depend>
+  <depend>actionlib</depend>
+  <depend>actionlib_msgs</depend>
+  <depend>dynamic_reconfigure</depend>
+
   <build_depend>eigen_catkin</build_depend>
   <build_depend>voxblox</build_depend>
   <build_depend>voxblox_ros</build_depend>

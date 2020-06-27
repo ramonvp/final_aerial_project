@@ -1,0 +1,10 @@
+# KF parameters
+
+estimation:
+  aruco_covariance: 0.001
+  twist_covariance: 0.2
+  process_covariance: 0.2
+  initial_error_covariance: 0.5
+  initial_x: 3.5
+  initial_y: 3.5
+  initial_z: 0.15

@@ -1,0 +1,15 @@
+<launch>
+    <arg name="debug" default="false"/>
+
+    <rosparam command="load" file="$(find final_aerial_project)/cfg/simple_kf.yaml" />
+
+    <node name="estimator" pkg="final_aerial_project" type="estimator_node" clear_params="true" output="screen">
+
+    </node>
+
+
+    <group if="$(arg debug)">
+        <node name="plotJuggler_vis" pkg="plotjuggler" type="PlotJuggler" args="\-\-layout $(find final_aerial_project)/rviz/plotjuggler_kf.xml"/>
+    </group>
+
+</launch>
