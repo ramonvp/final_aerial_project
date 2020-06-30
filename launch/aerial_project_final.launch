@@ -71,6 +71,7 @@
         <param name="waypoint_accuracy" value="0.5"/>
         <param name="yaw_accuracy" value="0.1"/>
         <param name="debug_pid" value="$(arg debug_pid)"/>
+        <param name="enable_rviz_goal" value="false"/>
         <rosparam file="$(find final_aerial_project)/cfg/controller.yaml"/>
       </node>
 
@@ -119,7 +120,7 @@
       <remap from="husky_gt" to="husky/odometry/filtered"/>
       <remap from="product_feedback" to="firefly/product_feedback" />
       <remap from="battery_timer" to="firefly/battery_timer" />
-  </node> 
+  </node>
   
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find final_aerial_project)/rviz/default.rviz" />
 

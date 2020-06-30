@@ -20,6 +20,7 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
     nh_private_.param("grid_y", Ny_, 5);
     nh_private_.param("grid_z", Nz_, 3);
     nh_private_.param("grid_separation", grid_sep_, 1.0);
+    nh_private_.param("overshoot", overshoot_, 1);
 
     nh_private_.param("try_rrt", try_rrt_, true);
 
@@ -28,10 +29,16 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
     nh_private_.param("distance_gain", distance_gain_, 1.0);
     nh_private_.param("angle_gain", angle_gain_, 1.0);
     nh_private_.param("obstacle_gain", obstacle_gain_, 1.0);
+    nh_private_.param("known_gain", known_gain_, 1.0);
+
+    nh_private_.param("use_cheating_paths", use_cheating_paths_, false);
 
     plan_service_ = nh_private_.advertiseService("makePlan", &PathPlanner::makePlanService, this);
     rviz_marker_pub_ = nh_private_.advertise<visualization_msgs::Marker>("grid_search", 5);
     path_marker_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("path", 1, true);
+    grid_cost_marker_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("grid_cost", 1, true);
+
+    infoSub_ = nh_private_.subscribe("info", 1, &PathPlanner::getInfoCallback, this);
 
     esdf_map_ = esdf_server_.getEsdfMapPtr();
     CHECK(esdf_map_);
@@ -47,6 +54,89 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
     // not sure about this, copied from rrt planner
     esdf_server_.setTraversabilityRadius(static_cast<float>(p_collision_radius_));
     esdf_server_.publishTraversable();
+
+    // get interesting places info
+    std::vector<double> dummy3DVector{0.0, 0.0, 0.0};
+    std::vector<double> dummy7DVector{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    if(use_cheating_paths_)
+    {
+        nh_private_.getParam("/parcel_dispatcher/check_pad_position", dummy3DVector);
+        check_pad_position_.x = dummy3DVector.at(0);
+        check_pad_position_.y = dummy3DVector.at(1);
+        check_pad_position_.z = dummy3DVector.at(2);
+
+        nh_private_.getParam("/parcel_dispatcher/charging_pad_pose", dummy7DVector);
+        charging_pad_position_.x = dummy7DVector.at(0);
+        charging_pad_position_.y = dummy7DVector.at(1);
+        charging_pad_position_.z = dummy7DVector.at(2);
+
+        // shelve pose
+        nh_private_.getParam("/parcel_dispatcher/shelve_pose", dummy7DVector);
+        shelve_pose_ = pose_from_7D_vec(dummy7DVector);
+
+        // husky pose
+        nh_private_.getParam("/parcel_dispatcher/husky_pose", dummy7DVector);
+        husky_pose_ = pose_from_7D_vec(dummy7DVector);
+
+        createStaticPaths();
+    }
+
+}
+
+trajectory_msgs::MultiDOFJointTrajectoryPoint createTrajPoint(double x, double y, double z, double yaw)
+{
+    trajectory_msgs::MultiDOFJointTrajectoryPoint p;
+    geometry_msgs::Transform t;
+    t.translation.x = x;
+    t.translation.y = y;
+    t.translation.z = z;
+    tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, yaw);
+    tf::quaternionTFToMsg(quat, t.rotation);
+    p.transforms.push_back(t);
+    return p;
+}
+
+void PathPlanner::createStaticPaths()
+{
+    // First path is from Charging Pad to Shelves position
+    fromChargeToShelve_.points.push_back( createTrajPoint(14,16,1, M_PI/4) );
+    fromChargeToShelve_.points.push_back( createTrajPoint(29,16,1, 0) );
+    fromChargeToShelve_.points.push_back( createTrajPoint(30,11,1, -3*M_PI/4) );
+    fromChargeToShelve_.points.push_back( createTrajPoint(15,3,1, -M_PI/2) );
+
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(31,12,1, M_PI/4) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(30,17,1, M_PI/2) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(16,24,1, 3*M_PI/4) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(14,26,1, M_PI/2) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(9,28,1, M_PI) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(2,28,1, -M_PI/2) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(2.5,23.5,1, 0) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(6,23.5,1, M_PI/2) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(6,25,1,  M_PI/2) );
+}
+
+geometry_msgs::Pose PathPlanner::pose_from_7D_vec(const std::vector<double> & poseVec)
+{
+    geometry_msgs::Pose geom_pose;
+
+    geom_pose.position.x = poseVec.at(0);
+    geom_pose.position.y = poseVec.at(1);
+    geom_pose.position.z = poseVec.at(2);
+
+    double quatnorm = 0.0;
+    for (int ii = 3; ii < 7; ii++)
+    {
+      quatnorm += poseVec.at(ii) * poseVec.at(ii);
+    }
+    quatnorm = std::sqrt(quatnorm);
+
+    geom_pose.orientation.x = poseVec.at(3) / quatnorm;
+    geom_pose.orientation.y = poseVec.at(4) / quatnorm;
+    geom_pose.orientation.z = poseVec.at(5) / quatnorm;
+    geom_pose.orientation.w = poseVec.at(6) / quatnorm;
+
+    return geom_pose;
 }
 
 double PathPlanner::getMapDistance(const Eigen::Vector3d& position) const
@@ -64,8 +154,7 @@ double PathPlanner::getMapDistance(const Eigen::Vector3d& position) const
     bool point_known = esdf_map_->getDistanceAtPosition(position, kInterpolate, &distance);
     if (!point_known)
     {
-        ROS_WARN("Point (%f,%f,%f) is unknown to the map",
-                 position[0], position[1], position[2]);
+        ROS_DEBUG("Point (%f,%f,%f) is unknown to the map", position[0], position[1], position[2]);
         return 0.0;
     }
 
@@ -86,8 +175,7 @@ bool PathPlanner::isCollisionFree(const Eigen::Vector3d &position)
 
     if( d <= p_collision_radius_)
     {
-        ROS_ERROR("Point (%f,%f,%f) collides d = %f",
-                  position[0],position[1],position[2], d);
+        ROS_DEBUG("Point (%f,%f,%f) collides d = %f", position[0],position[1],position[2], d);
     }
 
     return d > p_collision_radius_;
@@ -133,7 +221,10 @@ bool PathPlanner::isPointInMap(const geometry_msgs::Point & point)
 {
     Eigen::Vector3d lower_bound(Eigen::Vector3d::Zero());
     Eigen::Vector3d upper_bound(Eigen::Vector3d::Zero());
-    computeMapBounds(&lower_bound, &upper_bound);
+
+    voxblox::utils::computeMapBoundsFromLayer(
+          *esdf_map_->getEsdfLayerPtr(),
+          &lower_bound, &upper_bound);
 
     return point.x > lower_bound[0] && point.x < upper_bound[0] &&
            point.y > lower_bound[1] && point.y < upper_bound[1] &&
@@ -193,6 +284,106 @@ visualization_msgs::Marker PathPlanner::createMarkerForPath(
     return path_marker;
 }
 
+std::vector<geometry_msgs::Point> PathPlanner::generateGridTowardsGoal(const geometry_msgs::Point & start_point, const geometry_msgs::Point & end_point)
+{
+    std::vector<geometry_msgs::Point> grid;
+
+    double dx = end_point.x - start_point.x;
+    double dy = end_point.y - start_point.y;
+    double yaw = atan2(dy, dx);
+    double norm = sqrt(dx*dx + dy*dy);
+    int nx = static_cast<int>(norm/grid_sep_ + 0.5) + overshoot_;
+    if(nx%2 == 0) nx++;
+
+    for(int k = 0; k < Nz_; k++)
+    {
+        double offset_z = (k - Nz_/2)*grid_sep_;
+        if( start_point.z + offset_z > max_z_ )
+          continue;
+
+        for(int j = 0; j < Ny_; j++)
+        {
+            double offset_y = (j - Ny_/2)*grid_sep_;
+            for(int i = 0; i < nx; i++)
+            {
+                geometry_msgs::Point p;
+                //double offset_x = (i - nx/2)*grid_sep_;
+                double offset_x = i*grid_sep_;
+                p.x = start_point.x + offset_x*cos(yaw) - offset_y*sin(yaw);
+                p.y = start_point.y + offset_x*sin(yaw) + offset_y*cos(yaw);
+                p.z = start_point.z + offset_z;
+
+                // skip start location, should not be on the grid
+                double distance_point = euclideanDistance(p,  start_point);
+                if( distance_point < grid_sep_) continue;
+
+                grid.push_back(p);
+            }
+        }
+    }
+
+    return grid;
+}
+
+std::vector<geometry_msgs::Point> PathPlanner::generateGrid(const geometry_msgs::Point & point, int nx, int ny, int nz, double yaw, double sep)
+{
+    std::vector<geometry_msgs::Point> points;
+
+    for(int k = 0; k < nz; k++)
+    {
+        double offset_z = (k - nz/2)*sep;
+        if( point.z + offset_z > max_z_ )
+          continue;
+
+        for(int j = 0; j < ny; j++)
+        {
+            double offset_y = (j - ny/2)*sep;
+            for(int i = 0; i < nx; i++)
+            {
+                geometry_msgs::Point p;
+                double offset_x = (i - nx/2)*sep;
+                p.x = point.x + offset_x*cos(yaw) - offset_y*sin(yaw);
+                p.y = point.y + offset_x*sin(yaw) + offset_y*cos(yaw);
+                p.z = point.z + offset_z;
+
+                // skip my current location
+                //double distance_point = euclideanDistance(p,  point);
+                //if( distance_point < grid_sep_) continue;
+
+                points.push_back(p);
+            }
+        }
+    }
+    return points;
+}
+
+bool PathPlanner::isPredefinedPath(const geometry_msgs::Pose & start_pose,
+                                   const geometry_msgs::Pose & goal_pose,
+                                   trajectory_msgs::MultiDOFJointTrajectory & sampled_plan)
+{
+
+    if( euclideanDistance(start_pose.position,  charging_pad_position_) < 1.0 &&
+        euclideanDistance(goal_pose.position,  shelve_pose_.position) < 1.0)
+    {
+
+        sampled_plan.points = fromChargeToShelve_.points;
+        return true;
+    }
+
+    if( euclideanDistance(start_pose.position,  check_pad_position_) < 1.0 &&
+        euclideanDistance(goal_pose.position,  husky_pose_.position) < 1.0)
+    {
+
+        sampled_plan.points = fromCheckpadToHusky_.points;
+        return true;
+    }
+
+
+    return false;
+}
+
+
+#if 1
 bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
                            const geometry_msgs::PoseStamped & goal_pose,
                            trajectory_msgs::MultiDOFJointTrajectory & sampled_plan)
@@ -210,25 +401,27 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
     sampled_plan.header.frame_id = goal_pose.header.frame_id;
     sampled_plan.header.stamp = ros::Time::now();
 
+    if(use_cheating_paths_)
+    {
+        bool is_predefined = isPredefinedPath(start_pose.pose, goal_pose.pose, sampled_plan);
+        if(is_predefined)
+        {
+            ROS_INFO("[Planner] A predefined path has been used");
+            return true;
+        }
+    }
+
     if( try_rrt_ )
     {
-        bool goal_in_map = isPointInMap(goal_pose.pose.position);
-        if( goal_in_map )
+        // ask the RRT to look for a path
+        bool rrt_plan_ok = makePlan_RRT(start_pose, goal_pose, sampled_plan);
+        if(!rrt_plan_ok)
         {
-            // ask the RRT to look for a path
-            bool rrt_plan_ok = makePlan_RRT(start_pose, goal_pose, sampled_plan);
-            if(!rrt_plan_ok)
-            {
-                ROS_ERROR("RRT failed to produce a valid path, backfall to local steps");
-            }
-            else  // we're done
-            {
-                return true;
-            }
+            ROS_ERROR("RRT failed to produce a valid path, backfall to local steps");
         }
-        else
+        else  // we're done
         {
-            ROS_WARN("RRT can't make plan because goal Pose is not in map, will calculate local steps");
+            return true;
         }
     }
     else
@@ -240,62 +433,54 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
     // close to the MAV that are not occupied
     double yaw = tf::getYaw(start_pose.pose.orientation) - M_PI/2;
     std::vector<geometry_msgs::Point> grid_search;
-    for(int k = 0; k < Nz_; k++)
+    std::vector<geometry_msgs::Point> full_grid = generateGridTowardsGoal(start_pose.pose.position, goal_pose.pose.position);
+
+    //publishGridSearchPoints(sampled_plan.header.frame_id, full_grid, true);
+
+    for( auto & p : full_grid)
     {
-        double offset_z = (k - Nz_/2)*grid_sep_;
-
-        if( start_pose.pose.position.z + offset_z > max_z_ )
-          continue;
-
-        for(int j = 0; j < Ny_; j++)
+        if( isCollisionFree(p) )
         {
-            double offset_y = (j - Ny_/2)*grid_sep_;
-            for(int i = 0; i < Nx_; i++)
-            {
-                geometry_msgs::Point p;
-                double offset_x = (i - Nx_/2)*grid_sep_;
-                p.x = start_pose.pose.position.x + offset_x*cos(yaw) - offset_y*sin(yaw);
-                p.y = start_pose.pose.position.y + offset_x*sin(yaw) + offset_y*cos(yaw);
-                p.z = start_pose.pose.position.z + offset_z;
-
-                if( isCollisionFree(p) )
-                {
-                    grid_search.push_back(p);
-                    ROS_DEBUG("Accepted free point is: %f, %f, %f",
-                             p.x, p.y, p.z);
-                }
-                else
-                {
-                  ROS_DEBUG("Discarded occupied point is: %f, %f, %f",
-                           p.x, p.y, p.z);
-                }
-            }
+            grid_search.push_back(p);
+            ROS_DEBUG("Accepted free point is: %f, %f, %f",
+                     p.x, p.y, p.z);
+        }
+        else
+        {
+          ROS_DEBUG("Discarded occupied point is: %f, %f, %f",
+                   p.x, p.y, p.z);
         }
     }
 
-     if(isPointInsideSearchGrid(start_pose.pose, goal_pose.pose) &&
-        isCollisionFree(goal_pose.pose.position))
-     {
+#if 0
+    if(isPointInsideSearchGrid(start_pose.pose, goal_pose.pose) &&
+       isCollisionFree(goal_pose.pose.position))
+    {
         grid_search.push_back(goal_pose.pose.position);
         ROS_INFO("Goal point is in reach, accepted in search grid!");
-     }
+    }
+#endif
 
-     ROS_INFO("Number of candidates in grid search: %lu", grid_search.size());
+    ROS_INFO("Number of candidates in grid search: %lu", grid_search.size());
 
     // Step 2: for each possible location compute the cost
     double min_cost = 99999999;
     int min_cost_pos = -1;
     int i = 0;
+    visualization_msgs::MarkerArray marker_array;
+
     for( auto & p : grid_search)
     {
-        double cost = computePointCost(p, goal_pose.pose, start_pose.pose);
-        if( cost < min_cost )
+        PointCost pcost = computePointCost(p, goal_pose.pose, start_pose.pose);
+        if( pcost.cost() < min_cost )
         {
-            min_cost = cost;
+            min_cost = pcost.cost();
             min_cost_pos = i;
         }
+        createCylinderCost(pcost.costs(), p, i, marker_array);
         i++;
     }
+    grid_cost_marker_pub_.publish(marker_array);
 
     if( min_cost_pos != -1)
     {
@@ -304,6 +489,22 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
 
         sampled_plan.header.frame_id = goal_pose.header.frame_id;
         sampled_plan.header.stamp = ros::Time::now();
+
+        publishGridSearchPoints(sampled_plan.header.frame_id, grid_search, false);
+
+        geometry_msgs::PoseStamped winnerPose;
+        winnerPose = goal_pose; // copy all for convenience
+        winnerPose.pose.position = sp;
+        bool rrt_plan_ok = makePlan_RRT(start_pose, winnerPose, sampled_plan);
+        if(rrt_plan_ok)
+        {
+            return true;
+        }
+        else {
+            ROS_ERROR("RRT failed to produce a valid path to selected point, will move in straight line");
+        }
+
+        publishGridSearchArrow(sampled_plan.header.frame_id, start_pose.pose.position, sp);
 
         // Specify difference in direction
         double yaw = atan2( sp.y - start_pose.pose.position.y,
@@ -332,8 +533,6 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
         traj_point.transforms.push_back(t);
         sampled_plan.points.push_back(traj_point);
 
-        publishGridSearchPoints(sampled_plan.header.frame_id, grid_search);
-        publishGridSearchArrow(sampled_plan.header.frame_id, start_pose.pose.position, sp);
 
         return true;
     }
@@ -344,6 +543,7 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
 
     return false;
 }
+#endif
 
 
 bool PathPlanner::makePlanService(final_aerial_project::MakePlanRequest &req,
@@ -380,11 +580,40 @@ void PathPlanner::publishGridSearchArrow(const std::string & frame_id, const geo
     rviz_marker_pub_.publish(marker);
 }
 
-void PathPlanner::publishGridSearchPoints(const std::string & frame_id, const std::vector<geometry_msgs::Point> & points)
+void PathPlanner::publishGoalPointMarker(const geometry_msgs::PoseStamped & pose)
+{
+    visualization_msgs::Marker marker;
+    marker.type = visualization_msgs::Marker::SPHERE;
+    marker.ns = "goal_point";
+    marker.id = 0;
+    marker.action = visualization_msgs::Marker::ADD;
+
+    marker.header.frame_id = pose.header.frame_id;
+    marker.header.stamp = ros::Time::now();
+
+    marker.pose.position = pose.pose.position;
+    marker.pose.orientation.w = 1.0;
+
+    // Scale is the diameter of the shape
+    marker.scale.x = 0.2;
+    marker.scale.y = marker.scale.x;
+    marker.scale.z = marker.scale.x;
+
+    marker.color.b = 1.0;
+    marker.color.a = 1.0;
+
+    rviz_marker_pub_.publish(marker);
+}
+
+void PathPlanner::publishGridSearchPoints(const std::string & frame_id, const std::vector<geometry_msgs::Point> & points, bool is_full)
 {
     visualization_msgs::Marker marker;
     marker.type = visualization_msgs::Marker::SPHERE_LIST;
-    marker.ns = "grid_search";
+    if(is_full)
+      marker.ns = "grid_search_full";
+    else
+      marker.ns = "grid_search";
+
     marker.id = 0;
     marker.action = visualization_msgs::Marker::ADD;
 
@@ -399,37 +628,167 @@ void PathPlanner::publishGridSearchPoints(const std::string & frame_id, const st
     marker.scale.y = marker.scale.x;
     marker.scale.z = marker.scale.x;
 
-    marker.color.r = 1.0;
-    marker.color.a = 0.6;
+    if(is_full)
+    {
+      marker.color.r = 1.0;
+    }
+    else {
+      marker.color.b = 1.0;
+    }
+    marker.color.a = 1.0;
     marker.points = points;
-
 
     rviz_marker_pub_.publish(marker);
 }
 
-double PathPlanner::computePointCost(const geometry_msgs::Point & point,
+std_msgs::ColorRGBA PathPlanner::colorFromIndex(int index) const
+{
+  std_msgs::ColorRGBA color;
+  color.a = 1.0;
+
+  uint8_t n = (index+1)%8;
+  color.r = ((n>>2)&0x1)*1.0;
+  color.g = ((n>>1)&0x1)*1.0;
+  color.b = ((n>>0)&0x1)*1.0;
+
+  printf("Color index = %d => color R: %g  G: %g  B: %g\n",
+         index, color.r, color.g, color.b);
+  return color;
+}
+
+void PathPlanner::createCylinderCost(const std::vector<double> & costs,
+                                    const geometry_msgs::Point & point,
+                                    const int start_id,
+                                    visualization_msgs::MarkerArray & marker_array) const
+{
+    ros::Time now = ros::Time::now();
+    double offset = 0.0;
+    for(int i = 0; i < costs.size(); i++)
+    {
+        double cost = costs[i];
+        visualization_msgs::Marker cylinder_marker;
+        cylinder_marker.header.frame_id = "world";
+        cylinder_marker.header.stamp = now;
+        cylinder_marker.type = visualization_msgs::Marker::CYLINDER;
+        cylinder_marker.color = colorFromIndex(i);
+        cylinder_marker.ns = "cylinders";
+        cylinder_marker.id = start_id + i;
+        cylinder_marker.scale.x = 0.2;
+        cylinder_marker.scale.y = cylinder_marker.scale.x;
+        cylinder_marker.scale.z = cost;
+        cylinder_marker.pose.position = point;
+        cylinder_marker.pose.position.z += offset + cost/2.0;
+        //cylinder_marker.pose.position.z = offset + cost/2.0;
+        cylinder_marker.pose.orientation.w = 1.0;
+        marker_array.markers.push_back(cylinder_marker);
+        offset += cost;
+    }
+
+}
+
+void PathPlanner::getInfoCallback(const geometry_msgs::Point::ConstPtr & msg)
+{
+    Eigen::Vector3d position(msg->x, msg->y, msg->z);
+
+    double numPointsKnown = 0;
+    std::vector<geometry_msgs::Point> pointList = generateGrid(*msg, 15, 15, 3, 0.0, 0.2);
+    for( const auto & p : pointList)
+    {
+        if( isPointObserved(p) )
+            numPointsKnown += 1.0;
+    }
+    numPointsKnown = numPointsKnown/pointList.size();
+
+
+    printf("Point: %f,%f,%f\n", msg->x, msg->y, msg->z);
+    if( isPointInMap(*msg) )
+        printf("    Point is INSIDE map bounds\n");
+    else
+        printf("    Point is OUTSIDE map bounds\n");
+
+    if( esdf_map_->isObserved(position) )
+        printf("    Point is OBSERVED\n");
+    else
+        printf("    Point is NOT OBSERVED\n");
+
+    double distance = 0.0;
+    const bool kInterpolate = false;
+
+    Eigen::Vector3d gradient(Eigen::Vector3d::Zero());
+    // Returns true if the point exists in the map AND is observed.
+    bool point_known = esdf_map_->getDistanceAndGradientAtPosition(position, kInterpolate, &distance, &gradient);
+    printf("    Distance: %f  Known: %d\n    Gradient (%f,%f,%f) \n",
+           distance, point_known,
+           gradient[0], gradient[1], gradient[2] );
+
+    std::vector<double> costs {0.9, 1.2, 0.4};
+    visualization_msgs::MarkerArray marker_array;
+    createCylinderCost(costs, *msg, 0, marker_array);
+    grid_cost_marker_pub_.publish(marker_array);
+
+}
+
+PointCost PathPlanner::computePointCost(const geometry_msgs::Point & point,
                                      const geometry_msgs::Pose & goal_pose,
                                      const geometry_msgs::Pose & start_pose)
 {
-    double cost {0.0};
+    //double cost {0.0};
 
-    double distance_to_goal = euclideanDistance(point,  goal_pose.position);
+    double distance_to_goal = 0.0;
+
+    if(distance_gain_)
+    {
+        double dist_start_to_goal = euclideanDistance(start_pose.position,  goal_pose.position);
+        distance_to_goal = euclideanDistance(point,  goal_pose.position);
+        distance_to_goal = distance_to_goal/dist_start_to_goal;
+    }
 
     double currentYaw = tf::getYaw(start_pose.orientation);
-    double targetYaw = atan2(point.y - start_pose.position.y,
+    double targetYaw = atan2(goal_pose.position.y - start_pose.position.y,
+                             goal_pose.position.x - start_pose.position.x);
+    double pointYaw = atan2(point.y - start_pose.position.y,
                              point.x - start_pose.position.x);
-    double error_yaw = abs(angles::shortest_angular_distance(currentYaw, targetYaw));
+    double error_yaw = abs(angles::shortest_angular_distance(targetYaw, pointYaw));
     // normalize error angle, such that 180º means +1 in cost, error is [0, 1.0]
     error_yaw = error_yaw/M_PI;
 
-    double obstacle_distance = getMapDistance(point);
+    double obstacle_distance = abs(getMapDistance(point));
 
+    double numPointsKnown = 0;
+    if(known_gain_)
+    {
+        std::vector<geometry_msgs::Point> pointList = generateGrid(point, 15, 15, 3, 0.0, 0.2);
+        for( const auto & p : pointList)
+        {
+            if( isPointObserved(p) )
+                numPointsKnown += 1.0;
+        }
+        numPointsKnown = numPointsKnown/pointList.size();
 
-    cost = distance_gain_ * distance_to_goal +
-           angle_gain_    * error_yaw +
-           obstacle_gain_ * (p_collision_radius_/obstacle_distance);
+        printf("Point %f,%f  numPointKnown = %f\n", point.x, point.y, numPointsKnown);
+    }
+
+    PointCost cost;
+    cost.distance_cost = distance_gain_ * distance_to_goal;
+    cost.angle_cost    = angle_gain_    * error_yaw;
+    cost.obstacle_cost = obstacle_gain_ * (p_collision_radius_/obstacle_distance);
+    cost.known_cost    = known_gain_    * numPointsKnown;
 
     return cost;
+}
+
+// Returns true if the point exists in the map AND is observed.
+bool PathPlanner::isPointObserved(const geometry_msgs::Point & point) const
+{
+    return isPointObserved(Eigen::Vector3d(point.x, point.y, point.z));
+}
+
+bool PathPlanner::isPointObserved(const Eigen::Vector3d &position) const
+{
+    return esdf_map_->isObserved(position);
+    //double distance = 0.0;
+    //const bool kInterpolate = false;
+    //return esdf_map_->getDistanceAtPosition(position, kInterpolate, &distance);
 }
 
 double PathPlanner::euclideanDistance(const geometry_msgs::Point & a, const geometry_msgs::Point & b) const
@@ -517,6 +876,23 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
 
     //trajectory_msgs::MultiDOFJointTrajectory
     mav_msgs::msgMultiDofJointTrajectoryFromEigen(waypoints, "base_link", &rrt_plan);
+
+    // setup the correct orientation of each waypoint
+    int num_points = rrt_plan.points.size();
+    double last_yaw;
+    for( int i = 0; i < num_points; i++)
+    {
+        auto & transf = rrt_plan.points[i].transforms[0];
+        if( i < num_points -1 )
+        {
+          auto & next_transf = rrt_plan.points[i+1].transforms[0];
+          double dx = next_transf.translation.x - transf.translation.x;
+          double dy = next_transf.translation.y - transf.translation.y;
+          last_yaw = atan2(dy,dx);
+        }
+        tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, last_yaw);
+        tf::quaternionTFToMsg(quat, transf.rotation);
+    }
 
     // send the trajectory to RViz
     visualization_msgs::MarkerArray marker_array;

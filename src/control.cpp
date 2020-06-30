@@ -100,15 +100,28 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg)
   latest_pose.pose = msg->pose; 	// Handle pose measurements.
 }
 
-void poseCommandCallback(const geometry_msgs::PoseStampedConstPtr& msg)
+void newSetpoint(const geometry_msgs::Pose & pose)
 {
   std::unique_lock<std::mutex> guard(mutex_);
 
+  setpoint_pos[0] = pose.position.x;
+  setpoint_pos[1] = pose.position.y;
+  setpoint_pos[2] = pose.position.z;
+  setpoint_yaw    = tf::getYaw(pose.orientation);
+}
+
+void poseCommandCallback(const geometry_msgs::PoseStampedConstPtr& msg)
+{
   ROS_INFO_ONCE("[CONTROLLER] First Command Pose msg received ");
-  setpoint_pos[0] = msg->pose.position.x;
-  setpoint_pos[1] = msg->pose.position.y;
-  setpoint_pos[2] = msg->pose.position.z;
-  setpoint_yaw    = tf::getYaw(msg->pose.orientation);
+  newSetpoint(msg->pose);
+}
+
+void rvizGoalCallback(const geometry_msgs::PoseStampedConstPtr& msg)
+{
+    ROS_INFO_ONCE("[CONTROLLER] First RViz Pose msg received ");
+    geometry_msgs::Pose newPose = msg->pose;
+    newPose.position.z = latest_pose.pose.pose.position.z;
+    newSetpoint(newPose);
 }
 
 /* This function receives a trajectory of type MultiDOFJointTrajectoryConstPtr from the waypoint_publisher 
@@ -252,6 +265,8 @@ tf::Vector3 rotateZ (tf::Vector3 input_vector, float angle)
 	return (transform * input_vector);
 }
 
+
+
 int main(int argc, char** argv)
 {
 	ros::init(argc, argv, "controller");
@@ -265,9 +280,17 @@ int main(int argc, char** argv)
   //ros::Subscriber pose_sub  = nh.subscribe("pose_with_covariance", 1, &poseCallback);
   ros::Subscriber odom_sub  = nh.subscribe("odom", 1, &odomCallback);
   ros::Subscriber pose_command_sub  = nh.subscribe("command/pose", 1, &poseCommandCallback);
-
 	ros::Subscriber traj_sub  = nh.subscribe("command/trajectory", 1, &MultiDofJointTrajectoryCallback); 
 	current_index = 0; 
+
+  // Enable the RViz button 2D Nav Goal for easy testing
+  bool enable_rviz_goal;
+  nh_params.param("enable_rviz_goal", enable_rviz_goal, false);
+  ros::Subscriber rviz_goal_sub;
+  if(enable_rviz_goal)
+  {
+      rviz_goal_sub = nh.subscribe("/move_base_simple/goal", 1, &rvizGoalCallback);
+  }
 
 	// Outputs: some platforms want linear velocity (ardrone), others rollpitchyawratethrust (firefly)
 	// and the current trajectory 
