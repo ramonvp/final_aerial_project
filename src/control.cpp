@@ -24,13 +24,6 @@ std::ostream& operator<< (std::ostream& os, const tf::Vector3 & v)
 // convenient access
 enum {X,Y,Z,YAW};
 
-//Period for the control loop 
-float control_loop_period = 0.01; // 10 ms => 100Hz
-
-//Elapsed time between pose messages
-float 		delta_time_pose 	  = 0.0; 
-ros::Time	latest_pose_update_time; 
-
 std::mutex mutex_;
 
 // Feedbacks
@@ -38,23 +31,23 @@ sensor_msgs::Imu latest_imu;
 geometry_msgs::PoseWithCovarianceStamped	latest_pose;
 
 nav_msgs::Path latest_trajectory;
-int current_index{0};
+int current_index {0};
+
+// starting point
+geometry_msgs::PoseStamped	initial_pose;
 
 // Setpoints
-tf::Vector3 setpoint_pos;
-double setpoint_yaw;
+tf::Vector3 setpoint_pos {0,0,0};
+double setpoint_yaw {0};
 
-tf::Vector3 error_pos;
-double error_yaw;
+tf::Vector3 error_pos {0,0,0};
+double error_yaw {0};
 
-tf::Vector3 command_pos;
-double command_yaw;
+tf::Vector3 integral_error {0,0,0};
+double integral_error_yaw {0};
 
-tf::Vector3 integral_error;
-double integral_error_yaw;
-
-tf::Vector3 previous_error_pos;
-double previous_error_yaw;
+tf::Vector3 previous_error_pos {0,0,0};
+double previous_error_yaw {0};
 
 // Gravity 
 double 	gravity_compensation = 0.0 ;
@@ -82,6 +75,24 @@ ros::Publisher trajectory_pub;
 // pid publisher for debugging and tuning
 ros::Publisher pid_publisher[4];
 
+double waypoint_accuracy {0.5};
+double yaw_accuracy {0.02};
+bool enable_rviz_goal {false};
+bool debug_pid {false};
+
+void reset_i_terms()
+{
+  integral_error[0] = 0.0;
+  integral_error[1] = 0.0;
+  integral_error[2] = 0.0;
+  integral_error_yaw = 0.0;
+
+  previous_error_pos[X] = 0.0;
+  previous_error_pos[Y] = 0.0;
+  previous_error_pos[Z] = 0.0;
+  previous_error_yaw = 0.0;
+}
+
 void imuCallback(const sensor_msgs::ImuConstPtr& msg)
 {
   ROS_INFO_ONCE("[CONTROLLER] First Imu msg received ");
@@ -102,26 +113,43 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg)
 
 void newSetpoint(const geometry_msgs::Pose & pose)
 {
-  std::unique_lock<std::mutex> guard(mutex_);
-
   setpoint_pos[0] = pose.position.x;
   setpoint_pos[1] = pose.position.y;
   setpoint_pos[2] = pose.position.z;
   setpoint_yaw    = tf::getYaw(pose.orientation);
+
+  reset_i_terms();
+}
+
+void setTrajectoryFromPoint(const geometry_msgs::PoseStamped & wp)
+{
+    std::unique_lock<std::mutex> guard(mutex_);
+
+    // Clear all pending waypoints.
+    latest_trajectory.poses.clear();
+    latest_trajectory.poses.push_back(wp);
+
+    ROS_INFO ("WP 0\t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t",
+      wp.pose.position.x, wp.pose.position.y, wp.pose.position.z, tf::getYaw(wp.pose.orientation));
+
+    current_index = 0;
+    newSetpoint(wp.pose);
+    trajectory_pub.publish(latest_trajectory);
 }
 
 void poseCommandCallback(const geometry_msgs::PoseStampedConstPtr& msg)
 {
   ROS_INFO_ONCE("[CONTROLLER] First Command Pose msg received ");
-  newSetpoint(msg->pose);
+  setTrajectoryFromPoint(*msg);
 }
 
 void rvizGoalCallback(const geometry_msgs::PoseStampedConstPtr& msg)
 {
     ROS_INFO_ONCE("[CONTROLLER] First RViz Pose msg received ");
-    geometry_msgs::Pose newPose = msg->pose;
-    newPose.position.z = latest_pose.pose.pose.position.z;
-    newSetpoint(newPose);
+    geometry_msgs::PoseStamped newPose = *msg;
+    // RViz always sends 2D goal with z = 0, so copy from current z
+    newPose.pose.position.z = latest_pose.pose.pose.position.z;
+    setTrajectoryFromPoint(newPose);
 }
 
 /* This function receives a trajectory of type MultiDOFJointTrajectoryConstPtr from the waypoint_publisher 
@@ -151,6 +179,7 @@ void MultiDofJointTrajectoryCallback(const trajectory_msgs::MultiDOFJointTraject
   for (size_t i = 0; i < n_commands; ++i) {
 
     geometry_msgs::PoseStamped wp; 
+    wp.header.frame_id = msg->header.frame_id;
     wp.pose.position.x  = msg->points[i].transforms[0].translation.x;
     wp.pose.position.y  = msg->points[i].transforms[0].translation.y;
     wp.pose.position.z  = msg->points[i].transforms[0].translation.z;
@@ -162,14 +191,11 @@ void MultiDofJointTrajectoryCallback(const trajectory_msgs::MultiDOFJointTraject
     	wp.pose.position.x, wp.pose.position.y, wp.pose.position.z, tf::getYaw(wp.pose.orientation));
   }
   current_index = 0; 
-
-  setpoint_pos[0] = latest_trajectory.poses[0].pose.position.x;
-  setpoint_pos[1] = latest_trajectory.poses[0].pose.position.y;
-  setpoint_pos[2] = latest_trajectory.poses[0].pose.position.z;
-  setpoint_yaw    = tf::getYaw(latest_trajectory.poses[0].pose.orientation);
+  newSetpoint(latest_trajectory.poses[0].pose);
 
   trajectory_pub.publish(latest_trajectory);
 }
+
 
 /// Dynamic reconfigureCallback
 void reconfigure_callback(final_aerial_project::ControllerConfig &config, uint32_t level)
@@ -214,48 +240,6 @@ void reconfigure_callback(final_aerial_project::ControllerConfig &config, uint32
 	
 }
 
-void timerCallback(const ros::TimerEvent& e)
-{
-	double roll, pitch, yaw;
-	if (latest_pose.header.stamp.nsec > 0.0) 
-	{
-		ROS_INFO ("///////////////////////////////////////");
-		
-		// ADD here any debugging you need 
-		ROS_INFO ("WP \t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t", 
-			setpoint_pos[0],
-			setpoint_pos[1],
-			setpoint_pos[2], 
-			setpoint_yaw);
-		ROS_INFO ("Pose\t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t",
-			latest_pose.pose.pose.position.x, 
-			latest_pose.pose.pose.position.y,
-			latest_pose.pose.pose.position.z,           
-			tf::getYaw(latest_pose.pose.pose.orientation));
-		ROS_INFO ("PosErr\t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t", 
-			error_pos[0],
-			error_pos[1],
-			error_pos[2], 
-			error_yaw);        
-		ROS_INFO ("IntgrE\t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t",  
-			integral_error[0],
-			integral_error[1],
-			integral_error[2],
-			integral_error_yaw );
-
-		ROS_INFO ("Action\t:\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t",  
-			x_vel_cmd,
-			y_vel_cmd,
-			z_vel_cmd,
-			yaw_vel_cmd);
-		ROS_INFO ("..................................... ");
-
-
-
-		trajectory_pub.publish(latest_trajectory);
-	}
-}
-
 tf::Vector3 rotateZ (tf::Vector3 input_vector, float angle)
 {
 	tf::Quaternion quat;
@@ -265,7 +249,73 @@ tf::Vector3 rotateZ (tf::Vector3 input_vector, float angle)
 	return (transform * input_vector);
 }
 
+double distanceToSetpoint()
+{
+    const double dx = setpoint_pos[0]-latest_pose.pose.pose.position.x;
+    const double dy = setpoint_pos[1]-latest_pose.pose.pose.position.y;
+    const double dz = setpoint_pos[2]-latest_pose.pose.pose.position.z;
 
+    return sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+bool setPointReached()
+{
+    double distance = distanceToSetpoint();
+    error_yaw = angles::shortest_angular_distance(tf::getYaw(latest_pose.pose.pose.orientation), setpoint_yaw);
+    return (distance < waypoint_accuracy) && (abs(error_yaw) < yaw_accuracy);
+}
+
+void read_parameters(ros::NodeHandle & nh_params)
+{
+  /*  Not really needed, since dynamic_reconfigure will provide the
+      values stored in the controller.yaml file
+    nh_params.param("gravity_compensation", gravity_compensation, 0.0);
+    nh_params.param("x_kp", x_kp, 0.0);
+    nh_params.param("x_ki", x_ki, 0.0);
+    nh_params.param("x_kd", x_kd, 0.0);
+    nh_params.param("x_integral_limit", x_integral_limit, 0.0);
+
+    nh_params.param("y_kp", y_kp, 0.0);
+    nh_params.param("y_ki", y_ki, 0.0);
+    nh_params.param("y_kd", y_kd, 0.0);
+    nh_params.param("y_integral_limit", y_integral_limit, 0.0);
+
+    nh_params.param("z_kp", z_kp, 0.0);
+    nh_params.param("z_ki", z_ki, 0.0);
+    nh_params.param("z_kd", z_kd, 0.0);
+    nh_params.param("z_integral_limit", z_integral_limit, 0.0);
+
+    nh_params.param("yaw_kp", yaw_kp, 0.0);
+    nh_params.param("yaw_ki", yaw_ki, 0.0);
+    nh_params.param("yaw_kd", yaw_kd, 0.0);
+    nh_params.param("yaw_integral_limit", yaw_integral_limit, 0.0);
+
+    nh_params.param("x_vel_limit", x_vel_limit, 0.0);
+    nh_params.param("y_vel_limit", y_vel_limit, 0.0);
+    nh_params.param("z_vel_limit", z_vel_limit, 0.0);
+    nh_params.param("yaw_vel_limit", yaw_vel_limit, 0.0);
+
+    maxXVel = x_vel_limit;
+    maxYVel = y_vel_limit;
+    maxZVel = z_vel_limit;
+    maxYawVel = yaw_vel_limit;
+  */
+
+  nh_params.param("enable_rviz_goal", enable_rviz_goal, enable_rviz_goal);
+  nh_params.param("debug_pid", debug_pid, debug_pid);
+  nh_params.param("waypoint_accuracy", waypoint_accuracy, waypoint_accuracy);
+  nh_params.param("yaw_accuracy", yaw_accuracy, yaw_accuracy);
+
+  // Read initial setpoint from parameter server
+  nh_params.param("start_pose_x", initial_pose.pose.position.x, 0.0);
+  nh_params.param("start_pose_y", initial_pose.pose.position.y, 0.0);
+  nh_params.param("start_pose_z", initial_pose.pose.position.z, 1.0);
+  double initial_yaw;
+  nh_params.param("start_yaw", initial_yaw, 0.0);
+  initial_pose.pose.orientation = tf::createQuaternionMsgFromYaw(initial_yaw);
+  initial_pose.header.frame_id = "world";
+  initial_pose.header.stamp = ros::Time::now();
+}
 
 int main(int argc, char** argv)
 {
@@ -273,19 +323,17 @@ int main(int argc, char** argv)
 	ros::NodeHandle nh;
 	ros::NodeHandle nh_params("~");
 	
-	ROS_INFO("running controller");
+  ROS_INFO("[CONTROLLER] Running controller");
+
+  read_parameters(nh_params);
 	
 	// Inputs: imu and pose messages, and the desired trajectory 
   ros::Subscriber imu_sub   = nh.subscribe("imu",  1, &imuCallback);
-  //ros::Subscriber pose_sub  = nh.subscribe("pose_with_covariance", 1, &poseCallback);
   ros::Subscriber odom_sub  = nh.subscribe("odom", 1, &odomCallback);
-  ros::Subscriber pose_command_sub  = nh.subscribe("command/pose", 1, &poseCommandCallback);
+  ros::Subscriber cmd_sub   = nh.subscribe("command/pose", 1, &poseCommandCallback);
 	ros::Subscriber traj_sub  = nh.subscribe("command/trajectory", 1, &MultiDofJointTrajectoryCallback); 
-	current_index = 0; 
 
   // Enable the RViz button 2D Nav Goal for easy testing
-  bool enable_rviz_goal;
-  nh_params.param("enable_rviz_goal", enable_rviz_goal, false);
   ros::Subscriber rviz_goal_sub;
   if(enable_rviz_goal)
   {
@@ -298,8 +346,6 @@ int main(int argc, char** argv)
 	ros::Publisher vel_command_pub   = nh.advertise<geometry_msgs::Twist>("command/velocity", 1);
   trajectory_pub = nh.advertise<nav_msgs::Path>("current_trajectory", 1, true);
 
-  bool debug_pid;
-  nh_params.param("debug_pid", debug_pid, false);
   if(debug_pid)
   {
       pid_publisher[X] = nh.advertise<final_aerial_project::PID>("pid/x", 1);
@@ -308,126 +354,49 @@ int main(int argc, char** argv)
       pid_publisher[YAW] = nh.advertise<final_aerial_project::PID>("pid/yaw", 1);
   }
 
-  //double cog_z = 0.0;
-  //bool filtering = false;
-  //bool integral_window_enable;
-  //bool enable_ros_info;
-
-	nh_params.param("gravity_compensation", gravity_compensation, 0.0);
-	nh_params.param("x_kp", x_kp, 0.0);
-	nh_params.param("x_ki", x_ki, 0.0);
-	nh_params.param("x_kd", x_kd, 0.0);
-	nh_params.param("x_integral_limit", x_integral_limit, 0.0);
-
-	nh_params.param("y_kp", y_kp, 0.0);
-	nh_params.param("y_ki", y_ki, 0.0);
-	nh_params.param("y_kd", y_kd, 0.0);
-	nh_params.param("y_integral_limit", y_integral_limit, 0.0);
-
-	nh_params.param("z_kp", z_kp, 0.0);
-	nh_params.param("z_ki", z_ki, 0.0);
-	nh_params.param("z_kd", z_kd, 0.0);
-	nh_params.param("z_integral_limit", z_integral_limit, 0.0);
-
-	nh_params.param("yaw_kp", yaw_kp, 0.0);
-	nh_params.param("yaw_ki", yaw_ki, 0.0);
-	nh_params.param("yaw_kd", yaw_kd, 0.0);
-	nh_params.param("yaw_integral_limit", yaw_integral_limit, 0.0);
-
-	nh_params.param("x_vel_limit", x_vel_limit, 0.0);
-	nh_params.param("y_vel_limit", y_vel_limit, 0.0);
-	nh_params.param("z_vel_limit", z_vel_limit, 0.0);
-	nh_params.param("yaw_vel_limit", yaw_vel_limit, 0.0);
-
-  double waypoint_accuracy;
-  nh_params.param("waypoint_accuracy", waypoint_accuracy, 0.5);
-
-  double yaw_accuracy;
-  nh_params.param("yaw_accuracy", yaw_accuracy, 0.02);
-
-  ROS_INFO("Initializing controller ... ");
-	/* 
-	*
-	*
-		Initialize here your controllers
-		% set initial gains and the remaining parameters from the controller.yaml
-	*
-	*
-	*/
-  error_pos[0] = 0.0;
-  error_pos[1] = 0.0;
-  error_pos[2] = 0.0;
-  error_yaw = 0.0;
-
-  integral_error[0] = 0.0;
-  integral_error[1] = 0.0;
-  integral_error[2] = 0.0;
-  integral_error_yaw = 0.0;
-
-	maxXVel = x_vel_limit;
-	maxYVel = y_vel_limit;
-	maxZVel = z_vel_limit;
-	maxYawVel = yaw_vel_limit;
-
-  latest_trajectory.header.frame_id = "world" ;
-
 	// Start the dynamic_reconfigure server
   dynamic_reconfigure::Server<final_aerial_project::ControllerConfig> server;
   dynamic_reconfigure::Server<final_aerial_project::ControllerConfig>::CallbackType f;
   f = boost::bind(&reconfigure_callback, _1, _2);
   server.setCallback(f);
 
-  //ros::Timer timer;
-  //timer = nh.createTimer(ros::Duration(0.2), timerCallback);  //Timer for debugging
-  nh_params.param("start_pose_x", setpoint_pos[0], 0.0);
-  nh_params.param("start_pose_y", setpoint_pos[1], 0.0);
-  nh_params.param("start_pose_z", setpoint_pos[2], 1.0);
-
 	// Run the control loop and Fly to x=0m y=0m z=1m
   ROS_INFO_STREAM("[CONTROLLER] Going to starting position " << setpoint_pos);
-  //setpoint_pos = tf::Vector3(0.,0.,1.);
-	setpoint_yaw = 0.0;
 
-	latest_pose_update_time = ros::Time::now();
-  ros::Rate rate(2.0/control_loop_period);
-	
+  // set initial setpoint
+  setTrajectoryFromPoint(initial_pose);
+
+  //Elapsed time between pose messages
+  ros::Time latest_pose_update_time = ros::Time::now();
+  //Period for the control loop
+  double control_loop_period = 0.01; // 10 ms => 100Hz
+  ros::Rate rate(1.0/control_loop_period);
+
 	while(ros::ok())
 	{
 		ros::spinOnce();
 
     std::unique_lock<std::mutex> guard(mutex_);
 		
-		delta_time_pose = (latest_pose.header.stamp - latest_pose_update_time).toSec() ;
+    double delta_time_pose = (latest_pose.header.stamp - latest_pose_update_time).toSec() ;
 
 		// Check if pose/imu/state data was received
     if (	(latest_pose.header.stamp.nsec > 0.0) &&
        (  (latest_pose.header.stamp - latest_pose_update_time).toSec() > 0.0) )
 		{				
         latest_pose_update_time = latest_pose.header.stamp;
-
-        //compute distance to next waypoint
-        double distance = sqrt((setpoint_pos[0]-latest_pose.pose.pose.position.x) * (setpoint_pos[0]-latest_pose.pose.pose.position.x) +
-                               (setpoint_pos[1]-latest_pose.pose.pose.position.y) * (setpoint_pos[1]-latest_pose.pose.pose.position.y) +
-                               (setpoint_pos[2]-latest_pose.pose.pose.position.z) * (setpoint_pos[2]-latest_pose.pose.pose.position.z) );
-        error_yaw = angles::shortest_angular_distance(tf::getYaw(latest_pose.pose.pose.orientation), setpoint_yaw);
-        if (distance < waypoint_accuracy && abs(error_yaw) < yaw_accuracy)
+        if (setPointReached())
         {
-            //ROS_INFO("I am close the setpoint, current index = %d, num_points = %lu", current_index, latest_trajectory.poses.size());
-            //there is still waypoints
-            if (current_index < latest_trajectory.poses.size())
+            if (current_index < latest_trajectory.poses.size() - 1)
             {
-              ROS_INFO("[CONTROLLER] Waypoint achieved! Moving to next waypoint");
-              const geometry_msgs::PoseStamped & wp = latest_trajectory.poses[current_index];
-              setpoint_pos[0] = wp.pose.position.x;
-              setpoint_pos[1] = wp.pose.position.y;
-              setpoint_pos[2] = wp.pose.position.z;
-              setpoint_yaw    = tf::getYaw(wp.pose.orientation);
-              current_index++;
+                ROS_INFO("[CONTROLLER] Waypoint %d achieved! Moving to next waypoint", current_index);
+                current_index++;
+                newSetpoint(latest_trajectory.poses[current_index].pose);
             }
-            else if(current_index == latest_trajectory.poses.size()) // print once waypoint achieved
+            else if(current_index == latest_trajectory.poses.size() - 1) // print once waypoint achieved
             {
-              ROS_INFO("[CONTROLLER] Waypoint achieved! No more waypoints. Hovering");
-              current_index++;
+                ROS_INFO("[CONTROLLER] Waypoint %d achieved! No more waypoints. Hovering", current_index);
+                current_index++;
             }
         }
 				
@@ -461,11 +430,11 @@ int main(int argc, char** argv)
       diff_error[Z] = (error_pos[Z] - previous_error_pos[Z])/delta_time_pose;
       double diff_error_yaw = (error_yaw - previous_error_yaw)/delta_time_pose;
 
+      tf::Vector3 command_pos;
       command_pos[0] = x_kp * error_pos[0] + x_ki * integral_error[0] + x_kd * diff_error[X];
       command_pos[1] = y_kp * error_pos[1] + y_ki * integral_error[1] + y_kd * diff_error[Y];
       command_pos[2] = z_kp * error_pos[2] + z_ki * integral_error[2] + z_kd * diff_error[Z];
-
-      command_yaw = yaw_kp * error_yaw + yaw_ki * integral_error_yaw + yaw_kd * diff_error_yaw;
+      double command_yaw = yaw_kp * error_yaw + yaw_ki * integral_error_yaw + yaw_kd * diff_error_yaw;
 
       // store current error for next cycle
       previous_error_pos = error_pos;
@@ -592,7 +561,6 @@ int main(int argc, char** argv)
 
 		}
 	
-    //ros::Duration(control_loop_period/2.).sleep(); // may be set slower.
     rate.sleep();
 	}
 	return 0;

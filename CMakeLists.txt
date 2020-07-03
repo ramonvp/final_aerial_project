@@ -195,9 +195,9 @@ target_link_libraries(move_uav_node move_uav path_planner)
 add_executable(teleop_node src/teleop.cpp)
 target_link_libraries(teleop_node ${catkin_LIBRARIES})
 
-#add_executable(aruco_pos_node src/aruco_pos.cpp)
-#add_dependencies(aruco_pos_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-#target_link_libraries(aruco_pos_node ${catkin_LIBRARIES})
+add_executable(aruco_pos_node src/aruco_pos.cpp)
+add_dependencies(aruco_pos_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(aruco_pos_node ${catkin_LIBRARIES})
 
 add_executable(imu_fix_node src/imu_fix.cpp)
 add_dependencies(imu_fix_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})

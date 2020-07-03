@@ -68,16 +68,20 @@ private:
     {
       if (product_msg->marker_id == products_to_dispatch_id.at(current_product_dispatched))
       {
-        ROS_INFO("Parcel_dispatcher node: Product Feedback received: \n Parcel location found at \n \t x:%f \n \t y:%f \n \t z:%f", product_msg->approximate_position.x, product_msg->approximate_position.y, product_msg->approximate_position.z);
+        ROS_INFO("[DELIVERY_STATION] Parcel_dispatcher node: Product Feedback received: \n Parcel location found at \n \t x:%f \n \t y:%f \n \t z:%f", product_msg->approximate_position.x, product_msg->approximate_position.y, product_msg->approximate_position.z);
         current_product_dispatched++;
         fill_parcel_msg();
       }
       else
       {
-        ROS_INFO("Parcel_dispatcher node: Recalculating target position");
+        ROS_INFO("[DELIVERY_STATION] Parcel_dispatcher node: Recalculating target position");
         fill_parcel_msg();
         // TODO: Register product found
       }
+    }
+    else
+    {
+        ROS_ERROR("[DELIVERY_STATION] DRONE NOT IN CHECK_PAD POSITION!");
     }
   }
 

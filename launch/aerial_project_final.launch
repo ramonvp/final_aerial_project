@@ -17,6 +17,15 @@
   <arg name="groundMarkerFile" default="$(find final_aerial_project)/cfg/groundMarkers.yaml"/>
   <arg name="dispatcherConfigFile" default="$(find final_aerial_project)/cfg/Parcel_delivery_dispatcher/parcel_dispatcher.yaml"/>
 
+  <arg name="start_x" default="3.5"/>
+  <arg name="start_y" default="3.5"/>
+  <arg name="start_z" default="0.1"/>
+  <arg name="start_yaw" default="0.0"/>
+
+
+  <arg name="enable_husky" default="false"/>
+
+
   <!-- The following line causes gzmsg and gzerr messages to be printed to the console
       (even when Gazebo is started through roslaunch) -->
 
@@ -38,9 +47,9 @@
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)"/>
-      <arg name="y" value="3.5"/>
-      <arg name="x" value="3.5"/>
-      <arg name="z" value="0.1"/>
+      <arg name="y" value="$(arg start_x)"/>
+      <arg name="x" value="$(arg start_y)"/>
+      <arg name="z" value="$(arg start_z)"/>
     </include>
 
     <group if="$(arg enable_ground_truth)">
@@ -65,9 +74,10 @@
         <remap from="odom" to="$(arg odometry)"/>
         <param name="filtering" value="true" />
         <param name="enable_ros_info" value="false" />
-        <param name="start_pose_x" value="3.5" />
-        <param name="start_pose_y" value="3.5" />
-        <param name="start_pose_z" value="0.1" />
+        <param name="start_pose_x" value="$(arg start_x)" />
+        <param name="start_pose_y" value="$(arg start_y)" />
+        <param name="start_pose_z" value="$(arg start_z)" />
+        <param name="start_yaw" value="$(arg start_yaw)" />
         <param name="waypoint_accuracy" value="0.5"/>
         <param name="yaw_accuracy" value="0.1"/>
         <param name="debug_pid" value="$(arg debug_pid)"/>
@@ -94,17 +104,20 @@
     
   </group>
 
-  <include file="$(find husky_gazebo)/launch/spawn_husky.launch">
-    <arg name="x" default="6.0"/>
-    <arg name="y" default="25.0"/>
-    <arg name="z" default="0.0"/>
-    <arg name="yaw" default="0"/>
-    <arg name="laser_enabled" value="false"/>
-    <arg name="kinect_enabled" value="false"/>
-    <arg name="robot_namespace" value="$(arg husky_name)"/>
-  </include> 
+  <group if="$(arg enable_husky)">
+      <include file="$(find husky_gazebo)/launch/spawn_husky.launch">
+          <arg name="x" default="6.0"/>
+          <arg name="y" default="25.0"/>
+          <arg name="z" default="0.0"/>
+          <arg name="yaw" default="0"/>
+          <arg name="laser_enabled" value="false"/>
+          <arg name="kinect_enabled" value="false"/>
+          <arg name="robot_namespace" value="$(arg husky_name)"/>
+      </include>
 
-  <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
+      <node pkg="tf" type="static_transform_publisher" name="world_husky_broadcaster" args="-20 -15 0 0 0 0 1 base_link world 100" />
+  </group>
+
 
   <!--  Mapping  -->
   <include file="$(find final_aerial_project)/launch/mapping.launch"/>

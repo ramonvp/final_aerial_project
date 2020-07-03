@@ -61,15 +61,18 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
 
     if(use_cheating_paths_)
     {
+        // Read the coordinates from parameter server of the CheckPad
+        nh_private_.param("/parcel_dispatcher/detection_threshold", detectionThreshold_, detectionThreshold_);
+
         nh_private_.getParam("/parcel_dispatcher/check_pad_position", dummy3DVector);
         check_pad_position_.x = dummy3DVector.at(0);
         check_pad_position_.y = dummy3DVector.at(1);
-        check_pad_position_.z = dummy3DVector.at(2);
+        check_pad_position_.z = detectionThreshold_;//dummy3DVector.at(2);
 
         nh_private_.getParam("/parcel_dispatcher/charging_pad_pose", dummy7DVector);
         charging_pad_position_.x = dummy7DVector.at(0);
         charging_pad_position_.y = dummy7DVector.at(1);
-        charging_pad_position_.z = dummy7DVector.at(2);
+        charging_pad_position_.z = detectionThreshold_;//dummy7DVector.at(2);
 
         // shelve pose
         nh_private_.getParam("/parcel_dispatcher/shelve_pose", dummy7DVector);
@@ -103,10 +106,12 @@ void PathPlanner::createStaticPaths()
     fromChargeToShelve_.points.push_back( createTrajPoint(14,16,1, M_PI/4) );
     fromChargeToShelve_.points.push_back( createTrajPoint(29,16,1, 0) );
     fromChargeToShelve_.points.push_back( createTrajPoint(30,11,1, -3*M_PI/4) );
+    fromChargeToShelve_.points.push_back( createTrajPoint(21.82, 3.13, 1.0, -M_PI/2) );
     fromChargeToShelve_.points.push_back( createTrajPoint(15,3,1, -M_PI/2) );
 
     fromCheckpadToHusky_.points.push_back( createTrajPoint(31,12,1, M_PI/4) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(30,17,1, M_PI/2) );
+    fromCheckpadToHusky_.points.push_back( createTrajPoint(20,18,1, M_PI) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(16,24,1, 3*M_PI/4) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(14,26,1, M_PI/2) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(9,28,1, M_PI) );
@@ -114,6 +119,20 @@ void PathPlanner::createStaticPaths()
     fromCheckpadToHusky_.points.push_back( createTrajPoint(2.5,23.5,1, 0) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(6,23.5,1, M_PI/2) );
     fromCheckpadToHusky_.points.push_back( createTrajPoint(6,25,1,  M_PI/2) );
+
+    /* alternative path for checkpad - husky
+       WP 0	:	7.27	24.62	0.86	-2.78
+       WP 1	:	4.52	23.59	0.86	2.67
+       WP 2	:	3.10	24.30	0.58	1.56
+       WP 3	:	3.12	26.49	1.10	1.14
+       WP 4	:	3.58	27.50	1.23	-0.05
+       WP 5	:	9.46	27.17	0.98	-0.51
+       WP 6	:	18.39	22.16	0.75	-0.52
+       WP 7	:	29.26	15.92	0.64	-1.26
+       WP 8	:	29.94	13.78	0.95	-2.19
+       WP 9	:	24.07	5.62	1.42	-2.31
+       WP 10	:	21.82	3.13	0.86	0.00
+    */
 }
 
 geometry_msgs::Pose PathPlanner::pose_from_7D_vec(const std::vector<double> & poseVec)
@@ -362,19 +381,31 @@ bool PathPlanner::isPredefinedPath(const geometry_msgs::Pose & start_pose,
                                    trajectory_msgs::MultiDOFJointTrajectory & sampled_plan)
 {
 
-    if( euclideanDistance(start_pose.position,  charging_pad_position_) < 1.0 &&
-        euclideanDistance(goal_pose.position,  shelve_pose_.position) < 1.0)
+    if( euclideanDistance(start_pose.position,  charging_pad_position_) < detectionThreshold_ &&
+        euclideanDistance(goal_pose.position,  shelve_pose_.position) < detectionThreshold_)
     {
 
         sampled_plan.points = fromChargeToShelve_.points;
         return true;
     }
 
-    if( euclideanDistance(start_pose.position,  check_pad_position_) < 1.0 &&
-        euclideanDistance(goal_pose.position,  husky_pose_.position) < 1.0)
+    // Husky pose has been generated with a 2-sigma 2m gaussian noise,
+    // so compare with 2.5m instead of normal detection threshold
+    if( euclideanDistance(start_pose.position,  check_pad_position_) < detectionThreshold_ &&
+        euclideanDistance(goal_pose.position,  husky_pose_.position) < 2.5)
     {
 
         sampled_plan.points = fromCheckpadToHusky_.points;
+        // since Husky position has been added a 2m sigma noise, add the
+        // real pose to the end
+        sampled_plan.points.push_back(
+              createTrajPoint(
+                goal_pose.position.x,
+                goal_pose.position.y,
+                goal_pose.position.z,
+                tf::getYaw(goal_pose.orientation)
+                )
+              );
         return true;
     }
 
@@ -406,7 +437,7 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
         bool is_predefined = isPredefinedPath(start_pose.pose, goal_pose.pose, sampled_plan);
         if(is_predefined)
         {
-            ROS_INFO("[Planner] A predefined path has been used");
+            ROS_INFO("[PathPlanner] A predefined path has been used");
             return true;
         }
     }
@@ -436,6 +467,8 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
     std::vector<geometry_msgs::Point> full_grid = generateGridTowardsGoal(start_pose.pose.position, goal_pose.pose.position);
 
     //publishGridSearchPoints(sampled_plan.header.frame_id, full_grid, true);
+
+    full_grid.push_back(goal_pose.pose.position);
 
     for( auto & p : full_grid)
     {
@@ -651,8 +684,10 @@ std_msgs::ColorRGBA PathPlanner::colorFromIndex(int index) const
   color.g = ((n>>1)&0x1)*1.0;
   color.b = ((n>>0)&0x1)*1.0;
 
+  /*
   printf("Color index = %d => color R: %g  G: %g  B: %g\n",
          index, color.r, color.g, color.b);
+  */
   return color;
 }
 
@@ -765,7 +800,7 @@ PointCost PathPlanner::computePointCost(const geometry_msgs::Point & point,
         }
         numPointsKnown = numPointsKnown/pointList.size();
 
-        printf("Point %f,%f  numPointKnown = %f\n", point.x, point.y, numPointsKnown);
+        //printf("Point %f,%f  numPointKnown = %f\n", point.x, point.y, numPointsKnown);
     }
 
     PointCost cost;
@@ -832,13 +867,13 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
     Eigen::Vector3d upper_bound_(Eigen::Vector3d::Zero());
     computeMapBounds(&lower_bound_, &upper_bound_);
 
-    ROS_INFO_STREAM("Map bounds: " << lower_bound_.transpose() << " to "
+    ROS_DEBUG_STREAM("Map bounds: " << lower_bound_.transpose() << " to "
                                    << upper_bound_.transpose() << " size: "
                                    << (upper_bound_ - lower_bound_).transpose());
 
     // Limit Z to the same as goal, to avoid jumping over the walls
-    lower_bound_[2] = max_z_;
-    upper_bound_[2] = max_z_;
+    //lower_bound_[2] = max_z_;
+    //upper_bound_[2] = max_z_;
 
     // Inflate the bounds a bit.
     constexpr double kBoundInflationMeters = 0.5;
@@ -892,7 +927,12 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
         }
         tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, last_yaw);
         tf::quaternionTFToMsg(quat, transf.rotation);
+
+        //transf.translation.z = goal.pose.position.z;
     }
+
+    // last point must have the requested orientation
+    (*rrt_plan.points.rbegin()).transforms[0].rotation = goal.pose.orientation;
 
     // send the trajectory to RViz
     visualization_msgs::MarkerArray marker_array;

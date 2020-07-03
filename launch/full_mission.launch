@@ -1,22 +1,25 @@
 <launch>
-    <arg name="enable_ground_truth" default="false" />
-
-
-    <include file="$(find final_aerial_project)/launch/aerial_project_final.launch">
-        <arg name="run_controller" value="false"/>
-        <arg name="enable_ground_truth" value="true" />
-
-        <!-- setup the odometry source for the position controller -->
-        <group unless="$(arg enable_ground_truth)">
-            <arg name="odometry" value="odom_filtered" />
-        </group>
-    </include>
-
+    <arg name="enable_ground_truth" default="true" />
     <!--
+    <group if="$(arg enable_ground_truth)">
+        <include file="$(find final_aerial_project)/launch/aerial_project_final.launch">
+            <arg name="run_controller" value="false"/>
+        </include>
+    </group>
+
+    <group unless="$(arg enable_ground_truth)">
+        <include file="$(find final_aerial_project)/launch/aerial_project_final.launch">
+            <arg name="run_controller" value="false"/>
+            <arg name="odometry" value="odom_filtered" />
+        </include>
+    </group>
+    -->
+
     <include file="$(find final_aerial_project)/launch/aruco_detector.launch"/>
 
     <node pkg="final_aerial_project" type="aruco_pos_node" name="aruco_pos" output="screen">
         <remap from="pose_output" to="/firefly/aruco_pose"/>
+        <remap from="fiducial_transforms" to="/ventral/fiducial_transforms"/>
 
         <param name="base_link_frame"  value="firefly/base_link"/>
         <param name="camera_frame"     value="firefly/camera_ventral_optical_link"/>
@@ -24,20 +27,12 @@
         <param name="weighting_scale"  value="0.05"/>
     </node>
 
+    <include file="$(find final_aerial_project)/launch/path_planner.launch"/>
 
     <include file="$(find final_aerial_project)/launch/estimator.launch"/>
 
-    <group if="$(arg enable_ground_truth)">
-        <node pkg="final_aerial_project" type="mission_planner" name="mission_planner" output="screen">
-            <remap from="odom" to="/firefly/odom_filtered"/>
-        </node>
-    </group>
-
-    <group unless="$(arg enable_ground_truth)">
-        <node pkg="final_aerial_project" type="mission_planner" name="mission_planner" output="screen">
-            <remap from="odom" to="/firefly/ground_truth/odometry"/>
-        </node>
-    </group>
-    -->
+    <include file="$(find final_aerial_project)/launch/mission_planner.launch">
+        <arg name="enable_ground_truth" value="$(arg enable_ground_truth)"/>
+    </include>
 
 </launch>

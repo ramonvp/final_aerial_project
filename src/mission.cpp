@@ -10,12 +10,19 @@
 #include <angles/angles.h>
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
 #include <fiducial_msgs/FiducialTransformArray.h>
+#include <tf/transform_listener.h>
+#include <geometry_msgs/Vector3Stamped.h>
+
+std::ostream& operator<< (std::ostream& os, const tf::Stamped<tf::Vector3> & v)
+{
+    os << "[" << v.x() << "," << v.y() << "," << v.z() << "]";
+    return os;
+}
+
 
 class StateMachine
 {
 public:
-
-
   enum State {
       INITIALIZING,
       WAITING_ORDER,
@@ -31,6 +38,7 @@ public:
       ORDER_RECEIVED,
       TARGET_REACHED,
       OBJECT_FOUND,
+      LOW_BATTERY,
       CHARGING_REACHED
   };
 
@@ -41,12 +49,13 @@ public:
 
   const char * getStateName(State state)
   {
-      switch(state_)
+      switch(state)
       {
           case INITIALIZING: return "INITIALIZING";
           case WAITING_ORDER: return "WAITING_ORDER";
           case FLYING_TO_TARGET: return "FLYING_TO_TARGET";
           case FLYING_TO_RECHARGE: return "FLYING_TO_RECHARGE";
+          case FLYING_TO_CHECKPAD: return "FLYING_TO_CHECKPAD";
           case SEARCHING_TARGET: return "SEARCHING_TARGET";
           case DONE: return "DONE";
 
@@ -75,12 +84,6 @@ public:
       {
           transitionTo(FLYING_TO_TARGET);
       }
-      /*
-      else if( event == Events::TARGET_REACHED )
-      {
-          transitionTo(WAITING_ORDER);
-      }
-      */
   }
 
   void StateFlyingToTarget(Events event)
@@ -88,6 +91,10 @@ public:
       if( event == Events::TARGET_REACHED )
       {
           transitionTo(SEARCHING_TARGET);
+      }
+      else if( event == Events::LOW_BATTERY )
+      {
+          transitionTo(FLYING_TO_RECHARGE);
       }
       else if( event == Events::CHARGING_REACHED )
       {
@@ -109,6 +116,18 @@ public:
       {
           transitionTo(WAITING_ORDER);
       }
+      else if( event == Events::LOW_BATTERY )
+      {
+          transitionTo(FLYING_TO_RECHARGE);
+      }
+  }
+
+  void StateFlyingToRecharge(Events event)
+  {
+      if( event == Events::TARGET_REACHED )
+      {
+          transitionTo(WAITING_ORDER);
+      }
   }
 
   void signalEvent(Events event)
@@ -118,6 +137,12 @@ public:
           case INITIALIZING: StateInitializing(event); break;
           case WAITING_ORDER: StateWaitingOrder(event); break;
           case FLYING_TO_TARGET: StateFlyingToTarget(event); break;
+          case FLYING_TO_RECHARGE: StateFlyingToRecharge(event); break;
+          case FLYING_TO_CHECKPAD: StateFlyingToCheckpad(event); break;
+          case SEARCHING_TARGET: StateSearchingTarget(event); break;
+          case DONE:
+          default:
+              break;
       }
   }
 
@@ -138,13 +163,22 @@ public:
         detectionThreshold_{1.0},
         lowBatteryThreshold_{40},
         takeOffSent_{false},
-        takeOffHeight_{1.0}
+        takeOffHeight_{1.0},
+        distanceThreshold_{0.5},
+        yawThreshold_{0.2},
+        poseReachedTrigger_{10},
+        tf_listener_(ros::Duration(10.0)),
+        global_frame_{"world"},
+        base_frame_{"firefly/base_link"},
+        transform_tolerance_{0.3}
     {
+          nextProduct_.item_location = "UNKNOWN";
+          nextProduct_.marker_id = -1;
+
           dronePoseSub_ = nh_.subscribe("odom", 1, &MissionPlanner::odomCallback, this);
           batterySub_ = nh_.subscribe("/firefly/battery_timer", 1, &MissionPlanner::batteryCallback, this);
           productFeedbackPub_ = nh_.advertise<final_aerial_project::ProductFeedback>("/firefly/product_feedback", 1);
           productInfoSub_ = nh_.subscribe("/parcel_dispatcher/next_product", 1, &MissionPlanner::dispatcherCallback, this);
-          //kalmanReadySub_ = nh_.subscribe("filter_ready", 1, &MissionPlanner::kalmanReadyCallback, this);
           poseCommandPub_ = nh_.advertise<geometry_msgs::PoseStamped>("/firefly/command/pose", 1);
 
           plannerPub_ = nh_.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1);
@@ -153,25 +187,73 @@ public:
 
 
           frontalCameraArucoSub_ = nh_.subscribe("/frontal/fiducial_transforms", 1, &MissionPlanner::frontalArucoCallback, this);
-          ventralCameraArucoSub_ = nh_.subscribe("/ventral/fiducial_transforms", 1, &MissionPlanner::ventralArucoCallback, this);
-          // TODO: fill shelve trajectory :
-          // 15, 3, 1.0
-          // 15, 3, 3.7
-          // 17, 3, 3.7
-          // 17, 3, 1.0
-          //shelveTrajectory_
+          ventralCameraArucoSub_ = nh_.subscribe("/ventral_search/fiducial_transforms", 1, &MissionPlanner::ventralArucoCallback, this);
 
-          // TODO: fill huskyTrajectory_
-          // huskyTrajectory_
+          // fill shelve trajectory
+          shelveTrajectory_.points.push_back( createTrajPoint(15,3,1, -M_PI/2) );
+          shelveTrajectory_.points.push_back( createTrajPoint(15,3,3.7, -M_PI/2) );
+          shelveTrajectory_.points.push_back( createTrajPoint(17,3,3.7, -M_PI/2) );
+          shelveTrajectory_.points.push_back( createTrajPoint(17,3,1.0, -M_PI/2) );
 
-          // TODO: Read the coordinates from parameter server
+          // fill huskyTrajectory_
+          huskyTrajectory_.points.push_back( createTrajPoint(7.5,25.0,1.0, M_PI) );
+          huskyTrajectory_.points.push_back( createTrajPoint(5.0,25.0,1.0, -M_PI/2) );
+          huskyTrajectory_.points.push_back( createTrajPoint(5.0,23.5,1.0, 0) );
+          huskyTrajectory_.points.push_back( createTrajPoint(7.5,23.5,1.0, M_PI/2) );
+
+          double robot_clearance_radius_ {1.0}; // should match the config of voxblox
+
+          // Read the coordinates from parameter server of the CheckPad
+          nh_.param("/parcel_dispatcher/detection_threshold", detectionThreshold_, detectionThreshold_);
+
           checkPadPose_.header.frame_id = "world";
-          checkPadPose_.pose.position.x = 21.82;
-          checkPadPose_.pose.position.y = 3.13;
-          checkPadPose_.pose.position.z = 0.055;
+          std::vector<double> dummy3DVector{0.0, 0.0, 0.0};
+          nh_.getParam("/parcel_dispatcher/check_pad_position", dummy3DVector);
+          checkPadPose_.pose.position.x = dummy3DVector.at(0);
+          checkPadPose_.pose.position.y = dummy3DVector.at(1);
+          //checkPadPose_.pose.position.z = detectionThreshold_;//dummy3DVector.at(2);
+          checkPadPose_.pose.position.z = dummy3DVector.at(2);
+          if(checkPadPose_.pose.position.z < robot_clearance_radius_)
+          {
+               checkPadPose_.pose.position.z += detectionThreshold_ - 0.2;
+          }
+          //checkPadPose_.pose.position.x = 21.82;
+          //checkPadPose_.pose.position.y = 3.13;
+          //checkPadPose_.pose.position.z = 0.055;
           checkPadPose_.pose.orientation.w = 1.0;
 
+          // Get the charging pad position from parameter server
+          std::vector<double> dummy7DVector{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          nh_.getParam("/parcel_dispatcher/charging_pad_pose", dummy7DVector);
+          chargingPadPose_.pose.position.x = dummy7DVector.at(0);
+          chargingPadPose_.pose.position.y = dummy7DVector.at(1);
+          chargingPadPose_.pose.position.z = dummy7DVector.at(2);
+          chargingPadPose_.pose.orientation.w = 1.0;
+          if(chargingPadPose_.pose.position.z < robot_clearance_radius_)
+          {
+               chargingPadPose_.pose.position.z += detectionThreshold_ - 0.2;
+          }
+
+          nh_params_.param("distance_threshold", distanceThreshold_, distanceThreshold_);
+          nh_params_.param("yaw_threshold", yawThreshold_, yawThreshold_);
+          nh_params_.param("low_battery_secs", lowBatteryThreshold_, lowBatteryThreshold_);
+
+
           ROS_INFO("[MissionPlanner] Ready");
+    }
+
+
+    trajectory_msgs::MultiDOFJointTrajectoryPoint createTrajPoint(double x, double y, double z, double yaw)
+    {
+        trajectory_msgs::MultiDOFJointTrajectoryPoint p;
+        geometry_msgs::Transform t;
+        t.translation.x = x;
+        t.translation.y = y;
+        t.translation.z = z;
+        tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, yaw);
+        tf::quaternionTFToMsg(quat, t.rotation);
+        p.transforms.push_back(t);
+        return p;
     }
 
     void frontalArucoCallback(const fiducial_msgs::FiducialTransformArray::ConstPtr & msg)
@@ -180,31 +262,8 @@ public:
 
         if( sm_.state() == StateMachine::SEARCHING_TARGET && nextProduct_.item_location == "SHELVE")
         {
-            for(auto & t : msg->transforms)
-            {
-                arucoPositions_[t.fiducial_id] = arucoWorldPosition(t.transform.translation, msg->header.frame_id);
-            }
-
-            bool fiducial_found = arucoPositions_.count(nextProduct_.marker_id);
-            if(fiducial_found)
-            {
-                // dirigirme al check pad
-                plannerPub_.publish(checkPadPose_);
-                sm_.signalEvent(StateMachine::Events::OBJECT_FOUND);
-            }
+            observeArucoMarkers(msg);
         }
-    }
-
-    geometry_msgs::Point arucoWorldPosition(geometry_msgs::Vector3 vector, std::string frame_id)
-    {
-        geometry_msgs::Point p;
-
-        // TODO: TF lookup of aruco pos
-        p.x = vector.x;
-        p.y = vector.y;
-        p.z = vector.z;
-
-        return p;
     }
 
     void ventralArucoCallback(const fiducial_msgs::FiducialTransformArray::ConstPtr & msg)
@@ -213,34 +272,122 @@ public:
 
         if( sm_.state() == StateMachine::SEARCHING_TARGET && nextProduct_.item_location == "HUSKY")
         {
-            for(auto & t : msg->transforms)
+            observeArucoMarkers(msg);
+        }
+    }
+
+    void observeArucoMarkers(const fiducial_msgs::FiducialTransformArray::ConstPtr & msg)
+    {
+        for(auto & t : msg->transforms)
+        {
+            geometry_msgs::Vector3Stamped vector;
+            vector.header = msg->header;
+            // FIX: gazebo publishes the images in a wrong frame, manual correction needed
+            if(msg->header.frame_id == "firefly/vi_sensor/camera_left_link")
             {
-                arucoPositions_[t.fiducial_id] = arucoWorldPosition(t.transform.translation, msg->header.frame_id);
+                vector.header.frame_id = "firefly/vi_sensor/camera_left_optical_link";
             }
 
-            bool fiducial_found = arucoPositions_.count(nextProduct_.marker_id);
-            if(fiducial_found)
-            {
-                // dirigirme al check pad
-                plannerPub_.publish(checkPadPose_);
-                sm_.signalEvent(StateMachine::Events::OBJECT_FOUND);
-            }
+
+
+            vector.vector = t.transform.translation;
+            geometry_msgs::Point p = arucoWorldPosition(vector);
+            arucoPositions_[t.fiducial_id] = p;
+            //printf("Aruco %d found at %f,%f,%f\n", t.fiducial_id, p.x, p.y, p.z);
+
         }
 
+        bool fiducial_found = arucoPositions_.count(nextProduct_.marker_id);
+        if(fiducial_found)
+        {
+            // go to the check pad
+            fly_to(checkPadPose_.pose);
+            sm_.signalEvent(StateMachine::Events::OBJECT_FOUND);
+        }
     }
 
-    void kalmanReadyCallback(const std_msgs::Empty::ConstPtr & msg)
+    geometry_msgs::Vector3Stamped transform_dir(const geometry_msgs::Vector3Stamped & dir)
     {
+        tf::Stamped<tf::Vector3> in;
+        tf::Stamped<tf::Vector3> out;
 
+        tf::Stamped<tf::Pose> global_pose;
+        global_pose.setIdentity();
+        tf::Stamped<tf::Pose> aruco_pose_base_link;
+        aruco_pose_base_link.setIdentity();
+        aruco_pose_base_link.frame_id_ = base_frame_;
+        aruco_pose_base_link.stamp_ = in.stamp_;
+
+
+        tf::vector3StampedMsgToTF(dir, in);
+
+        try {
+            tf_listener_.transformVector(base_frame_, in, out);
+
+            aruco_pose_base_link.setOrigin(out);
+            tf_listener_.transformPose(global_frame_, aruco_pose_base_link, global_pose);
+        } catch (tf::LookupException& ex) {
+            ROS_ERROR_THROTTLE(1.0, "No Transform available Error looking up camera to robot "
+                                    "tf: %s\n",
+                               ex.what());
+            return {};
+        } catch (tf::ConnectivityException& ex) {
+            ROS_ERROR_THROTTLE(1.0, "Connectivity Error looking up camera to robot tf: %s\n",
+                               ex.what());
+            return {};
+        } catch (tf::ExtrapolationException& ex) {
+            ROS_ERROR_THROTTLE(1.0, "Extrapolation Error looking up camera to robot tf: %s\n",
+                               ex.what());
+            return {};
+        }
+
+        geometry_msgs::Vector3Stamped msg;
+        msg.vector.x = global_pose.getOrigin().x();
+        msg.vector.y = global_pose.getOrigin().y();
+        msg.vector.z = global_pose.getOrigin().z();
+
+        return msg;
     }
+
+    geometry_msgs::Point arucoWorldPosition(const geometry_msgs::Vector3Stamped & vector)
+    {
+        geometry_msgs::Point p;
+
+        // TF lookup of aruco pos
+        geometry_msgs::Vector3Stamped vector_world = transform_dir(vector);
+
+        p.x = vector_world.vector.x;
+        p.y = vector_world.vector.y;
+        p.z = vector_world.vector.z;
+
+        return p;
+    }
+
 
     void batteryCallback(const std_msgs::Int32::ConstPtr& msg)
     {
         remainingBattery_ = msg->data;
-        if( remainingBattery_ <= lowBatteryThreshold_ )
+
+        // If we have still enough battery, we are fine
+        if( remainingBattery_ > lowBatteryThreshold_ )
+            return;
+
+        if( sm_.state() != StateMachine::FLYING_TO_RECHARGE)
         {
-            // TODO: go back to charging pad
-            ROS_WARN("[MissionPlanner] Low battery");
+            // Go back to charging pad
+            ROS_WARN("[MissionPlanner] Low battery: %d secs", remainingBattery_);
+
+            // TODO: If we are flying to CheckPad and we are
+            // very close, maybe wait a little bit
+            if(sm_.state() == StateMachine::FLYING_TO_CHECKPAD)
+            {
+               double distance = euclideanDistance(currentOdom_.pose.pose.position, checkPadPose_.pose.position);
+               if(distance < 12.0) return;
+            }
+
+            // TODO: currently disabled, check state machine loops
+            //sm_.signalEvent(StateMachine::Events::LOW_BATTERY);
+            //plannerPub_.publish(chargingPadPose_);
         }
     }
 
@@ -248,9 +395,32 @@ public:
     {
         if( sm_.state() == StateMachine::WAITING_ORDER )
         {
+            ROS_INFO("[Mission] Order received, location: %s  marker_id: %ld at (%g,%g,%g)",
+                     product_msg->item_location.c_str(),
+                     product_msg->marker_id,
+                     product_msg->approximate_pose.pose.position.x,
+                     product_msg->approximate_pose.pose.position.y,
+                     product_msg->approximate_pose.pose.position.z);
+
+            if( product_msg->item_location == nextProduct_.item_location &&
+                product_msg->marker_id == nextProduct_.marker_id)
+            {
+                ROS_WARN("[Mission] Waiting order, but previous order was received. Discarding...");
+                return;
+            }
             std::string previous_location = nextProduct_.item_location;
             nextProduct_ = *product_msg;
 
+            // we don't want to fly so close to the ground
+            if(nextProduct_.approximate_pose.pose.position.z < detectionThreshold_)
+            {
+                nextProduct_.approximate_pose.pose.position.z = detectionThreshold_;
+            }
+
+            fly_to(nextProduct_.approximate_pose.pose);
+            sm_.signalEvent(StateMachine::Events::ORDER_RECEIVED);
+            arucoPositions_.clear();
+#if 0
             if( previous_location == nextProduct_.item_location &&
                 arucoPositions_.count(nextProduct_.marker_id))
             {
@@ -263,69 +433,116 @@ public:
             }
             else
             {
-                geometry_msgs::PoseStamped goalMsg;
-                goalMsg.pose = nextProduct_.approximate_pose.pose;
-                goalMsg.header.frame_id = "world";
-                goalMsg.header.stamp = ros::Time::now();
-                plannerPub_.publish(goalMsg);
+                fly_to(nextProduct_.approximate_pose.pose);
                 sm_.signalEvent(StateMachine::Events::ORDER_RECEIVED);
                 arucoPositions_.clear();
             }
+#endif
         }
     }
 
-    bool poseReached(geometry_msgs::Pose currentPose, geometry_msgs::Pose targetPose)
+    double euclideanDistance(const geometry_msgs::Point & a, const geometry_msgs::Point & b)
     {
-        double dx = currentPose.position.x - targetPose.position.x;
-        double dy = currentPose.position.y - targetPose.position.y;
-        double dz = currentPose.position.z - targetPose.position.z;
-        double distance = sqrt(dx*dx + dy*dy + dz*dz);
+        double dx = a.x - b.x;
+        double dy = a.y - b.y;
+        double dz = a.z - b.z;
+        return sqrt(dx*dx + dy*dy + dz*dz);
+    }
 
+    bool poseReached(geometry_msgs::Pose currentPose, geometry_msgs::Pose targetPose, double & pending_dist, double & pending_yaw)
+    {
+        double distance   = euclideanDistance(currentPose.position, targetPose.position);
         double currentYaw = tf::getYaw(currentPose.orientation);
         double targetYaw  = tf::getYaw(targetPose.orientation);
-        //double angleDiff = currentYaw - targetYaw;
-        double angleDiff = abs(angles::shortest_angular_distance(targetYaw, currentYaw));
-        return (distance < 0.5) && (angleDiff < 0.2);
+        pending_yaw = angles::shortest_angular_distance(targetYaw, currentYaw);
+        double angleDiff  = abs(pending_yaw);
+
+        pending_dist = distance;
+        pending_yaw  = angleDiff;
+
+        return (distance < distanceThreshold_) && (angleDiff < yawThreshold_);
+    }
+
+    bool ifFlyingSomewhere() const
+    {
+        return sm_.state() == StateMachine::FLYING_TO_TARGET ||
+               sm_.state() == StateMachine::FLYING_TO_CHECKPAD;
+    }
+
+    void takeOff()
+    {
+        ROS_INFO("[MissionPlanner] Take Off!");
+        geometry_msgs::PoseStamped takeOffMsg;
+        takeOffMsg.header = currentOdom_.header;
+        takeOffMsg.pose = currentOdom_.pose.pose;
+        takeOffMsg.pose.position.z = takeOffHeight_;
+        poseCommandPub_.publish(takeOffMsg);
+        takeOffSent_ = true;
+        // wait for a few seconds to be airborne
+        ros::Rate r(10);
+        int counter = 0;
+        while(counter < 50) // about 5segs
+        {
+            ros::spinOnce();
+            r.sleep();
+            counter++;
+        }
+        sm_.signalEvent(StateMachine::Events::TAKE_OFF);
     }
 
     void odomCallback(const nav_msgs::Odometry::ConstPtr & msg)
     {
+        static int counter = 0;
+        static int poseReachedCounter = 0;
+
         ROS_INFO_ONCE("[MissionPlanner] First odom message received");
         currentOdom_ = *msg;
+
         if(!takeOffSent_)
         {
-            ROS_INFO("[MissionPlanner] Take Off!");
-            geometry_msgs::PoseStamped takeOffMsg;
-            takeOffMsg.header = currentOdom_.header;
-            takeOffMsg.pose = currentOdom_.pose.pose;
-            takeOffMsg.pose.position.z = takeOffHeight_;
-            poseCommandPub_.publish(takeOffMsg);
-            takeOffSent_ = true;
-            // espera de unos 5seg
-            sm_.signalEvent(StateMachine::Events::TAKE_OFF);
+            takeOff();
+            return;
         }
 
-        if(sm_.state() == StateMachine::FLYING_TO_TARGET)
+        if( !ifFlyingSomewhere() )
+            return;
+
+        // So we are here waiting for the drone to reach some programmed point
+        double pending_dist, pending_yaw;
+        if( poseReached(msg->pose.pose, plannerTargetPose_, pending_dist, pending_yaw) )
         {
-            if( poseReached(msg->pose.pose, nextProduct_.approximate_pose.pose) )
+            // require confirmation that we are stable
+            poseReachedCounter++;
+            if(poseReachedCounter < poseReachedTrigger_) return;
+            poseReachedCounter = 0;
+
+            if(sm_.state() == StateMachine::FLYING_TO_TARGET)
             {
-                // hemos llegado al target, ahora decidir qué hago
+                // we reached the approximate location of the item we have to look for
+                ROS_INFO("[Mission] Reached target destination: %s", nextProduct_.item_location.c_str());
                 onTargetReached(nextProduct_.item_location);
             }
-        }
-        else if(sm_.state() == StateMachine::FLYING_TO_CHECKPAD)
-        {
-            if( poseReached(msg->pose.pose, checkPadPose_.pose) )
+            else if(sm_.state() == StateMachine::FLYING_TO_CHECKPAD)
             {
-                  // hemos llegado al checkpad, publicamos la posicion de la caja
-                  final_aerial_project::ProductFeedback feedbackMsg;
-                  feedbackMsg.marker_id = nextProduct_.marker_id;
-                  feedbackMsg.approximate_position = arucoPositions_[nextProduct_.marker_id];
-                  productFeedbackPub_.publish(feedbackMsg);
-                  sm_.signalEvent(StateMachine::Events::TARGET_REACHED);
+                // hemos llegado al checkpad, publicamos la posicion de la caja
+                ROS_INFO("[Mission] CheckPad reached");
+                final_aerial_project::ProductFeedback feedbackMsg;
+                feedbackMsg.marker_id = nextProduct_.marker_id;
+                feedbackMsg.approximate_position = arucoPositions_[nextProduct_.marker_id];
+                productFeedbackPub_.publish(feedbackMsg);
+                sm_.signalEvent(StateMachine::Events::TARGET_REACHED);
             }
         }
-
+        else
+        {
+            poseReachedCounter = 0;
+            if(counter%10 == 0)
+            {
+                ROS_INFO("[Mission] Flying to target, pending dist: %.02f  yaw: %.02f",
+                         pending_dist, pending_yaw);
+            }
+        }
+        counter++;
     }
 
     void onTargetReached(std::string location)
@@ -346,14 +563,29 @@ public:
         }
     }
 
-    bool loop()
+    bool done()
     {
-        if( sm_.state() == StateMachine::DONE)
+        static int counter = 0;
+
+        if(counter%10 == 0)
         {
-            return true;
+            ROS_INFO("[Mission] Current state: %s", sm_.getStateName(sm_.state()));
         }
 
-        return false;
+        counter++;
+
+        return sm_.state() == StateMachine::DONE;
+    }
+
+    void fly_to(const geometry_msgs::Pose & pose)
+    {
+        geometry_msgs::PoseStamped goalMsg;
+        goalMsg.pose = pose;
+        goalMsg.header.frame_id = "world";
+        goalMsg.header.stamp = ros::Time::now();
+        plannerPub_.publish(goalMsg);
+
+        plannerTargetPose_ = pose;
     }
 
 private:
@@ -362,7 +594,6 @@ private:
 
     ros::Subscriber dronePoseSub_;
     ros::Subscriber batterySub_;
-    //ros::Subscriber kalmanReadySub_;
     ros::Publisher productFeedbackPub_;
     ros::Publisher poseCommandPub_;
     ros::Subscriber productInfoSub_;
@@ -376,6 +607,10 @@ private:
 
     // detection_threshold from parameter server
     float detectionThreshold_;
+
+    double distanceThreshold_;
+    double yawThreshold_;
+    int poseReachedTrigger_;
 
     int32_t lowBatteryThreshold_;
 
@@ -394,6 +629,14 @@ private:
     std::map<int32_t, geometry_msgs::Point> arucoPositions_;
 
     geometry_msgs::PoseStamped checkPadPose_;
+    geometry_msgs::PoseStamped chargingPadPose_;
+
+    tf::TransformListener tf_listener_;
+    std::string global_frame_;
+    std::string base_frame_;
+    double transform_tolerance_;
+    // the target pose sent to the planner
+    geometry_msgs::Pose plannerTargetPose_;
 };
 
 
@@ -413,7 +656,7 @@ int main(int argc, char *argv[])
     while(ros::ok() && mission_finished == false)
     {
         rate.sleep();
-        mission_finished = mission_planner.loop();
+        mission_finished = mission_planner.done();
         ros::spinOnce();
     }
 

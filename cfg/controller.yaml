@@ -1,4 +1,4 @@
-gravity_compensation: 15.0
+gravity_compensation: 17.0
 integral_window_enable: False
 x_kp: 0.5
 x_ki: 0.5
@@ -10,9 +10,9 @@ y_ki: 0.5
 y_kd: 0.65
 y_integral_limit: 0.1
 y_integral_window_size: 500
-z_kp: 5.0
-z_ki: 4.0
-z_kd: 7.0
+z_kp: 3.0
+z_ki: 0.2
+z_kd: 6.0
 z_integral_limit: 0.5
 z_integral_window_size: 1000
 yaw_kp: 3.0 # 3.0

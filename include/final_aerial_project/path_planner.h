@@ -156,6 +156,8 @@ protected:
     geometry_msgs::Point check_pad_position_;
     geometry_msgs::Point charging_pad_position_;
 
+    double detectionThreshold_ {1.0};
+
 };
 
 } // namespace final_aerial_project

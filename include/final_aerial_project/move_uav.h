@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <nav_msgs/Odometry.h>
 #include <actionlib/server/simple_action_server.h>
 #include <final_aerial_project/MoveUAVAction.h>
 #include <final_aerial_project/path_planner.h>
@@ -20,11 +21,15 @@ protected:
 
     void poseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg );
 
+    void odomCallback(const nav_msgs::Odometry::ConstPtr& msg );
+
     void rvizGoalCallback(const geometry_msgs::PoseStampedConstPtr& msg);
 
     bool targetReached(const geometry_msgs::Point & goal) const;
 
     geometry_msgs::Point lastWaypoint(const trajectory_msgs::MultiDOFJointTrajectory & plan) const;
+
+    bool isQuaternionValid(const geometry_msgs::Quaternion& q);
 
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -35,7 +40,7 @@ protected:
 
     PathPlanner planner_;
 
-    ros::Subscriber pose_sub_;
+    ros::Subscriber odom_sub_;
     ros::Publisher traj_pub_;
     ros::Subscriber rviz_goal_sub_;
     ros::Publisher traj_goal_pub_;

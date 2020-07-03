@@ -1,9 +1,40 @@
 <launch>
-    <include file="$(find aruco_detect)/launch/aruco_detect.launch">
-        <arg name="camera" value="/firefly/camera_ventral" />
-        <arg name="image" value="image_raw" />
-        <arg name="fiducial_len" value="0.15" />
-        <arg name="dictionary" value="6" />
-    </include>
+
+    <node ns="ventral" pkg="aruco_detect" name="aruco_detect" type="aruco_detect" output="log" respawn="false">
+        <param name="image_transport" value="compressed"/>
+        <param name="publish_images" value="true" />
+        <param name="fiducial_len" value="0.15"/>
+        <param name="dictionary" value="6"/>
+        <param name="publish_fiducial_tf" value="false"/>
+
+        <remap from="/fiducial_images" to="/ventral/fiducial_images"/>
+        <remap from="/ventral/camera/compressed" to="/firefly/camera_ventral/image_raw/compressed"/>
+        <remap from="/ventral/camera_info" to="/firefly/camera_ventral/camera_info"/>
+    </node>
+
+    <node ns="frontal" pkg="aruco_detect" name="aruco_detect" type="aruco_detect" output="log" respawn="false">
+        <param name="image_transport" value="compressed"/>
+        <param name="publish_images" value="true" />
+        <param name="fiducial_len" value="0.25"/>
+        <param name="dictionary" value="0"/>
+        <param name="publish_fiducial_tf" value="false"/>
+
+        <remap from="/fiducial_images" to="/frontal/fiducial_images"/>
+        <remap from="/frontal/camera/compressed" to="/firefly/vi_sensor/left/image_raw/compressed"/>
+        <remap from="/frontal/camera_info" to="/firefly/vi_sensor/left/camera_info"/>
+    </node>
+
+    <node ns="ventral_search" pkg="aruco_detect" name="aruco_detect" type="aruco_detect" output="log" respawn="false">
+        <param name="image_transport" value="compressed"/>
+        <param name="publish_images" value="true" />
+        <param name="fiducial_len" value="0.25"/>
+        <param name="dictionary" value="0"/>
+        <param name="publish_fiducial_tf" value="false"/>
+
+        <remap from="/fiducial_images" to="/ventral_search/fiducial_images"/>
+        <remap from="/ventral_search/camera/compressed" to="/firefly/camera_ventral/image_raw/compressed"/>
+        <remap from="/ventral_search/camera_info" to="/firefly/camera_ventral/camera_info"/>
+    </node>
+
 </launch>
 
