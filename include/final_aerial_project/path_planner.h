@@ -5,6 +5,8 @@
 #include <final_aerial_project/voxblox_ompl_rrt.h>
 #include <final_aerial_project/MakePlan.h>
 #include <geometry_msgs/PoseWithCovariance.h>
+#include <dynamic_reconfigure/server.h>
+#include <final_aerial_project/PlannerConfig.h>
 
 namespace final_aerial_project
 {
@@ -16,7 +18,7 @@ struct PointCost
     double obstacle_cost{0.0};
     double known_cost{0.0};
 
-    double cost() {
+    double cost() const {
       return distance_cost + angle_cost + obstacle_cost + known_cost;
     }
 
@@ -34,6 +36,8 @@ class PathPlanner
 public:
     PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_private);
 
+    ~PathPlanner();
+
     bool isCollisionFree(const geometry_msgs::Point & point);
 
     bool makePlan(const geometry_msgs::PoseStamped & start_pose,
@@ -47,6 +51,9 @@ public:
     void publishGoalPointMarker(const geometry_msgs::PoseStamped & pose);
 
     void loop();
+
+    void getInfoCallback(const geometry_msgs::Point & start, const geometry_msgs::Point & goal);
+
 
 protected:
     bool makePlanService(final_aerial_project::MakePlanRequest &req,
@@ -91,7 +98,8 @@ protected:
     // generate a grid of points around <point> with optional yaw
     std::vector<geometry_msgs::Point> generateGridTowardsGoal(const geometry_msgs::Point & start_point, const geometry_msgs::Point & end_point);
 
-    void getInfoCallback(const geometry_msgs::Point::ConstPtr & msg);
+    // generate a grid of points that covers the map bounds
+    std::vector<geometry_msgs::Point> generateGridOnBounds(double z);
 
     std_msgs::ColorRGBA colorFromIndex(int index) const;
 
@@ -110,6 +118,16 @@ protected:
                           const geometry_msgs::Pose & goal_pose,
                           trajectory_msgs::MultiDOFJointTrajectory & sampled_plan);
 
+
+    void computeGridWithCosts(const geometry_msgs::Pose & start_pose,
+                              const geometry_msgs::Pose & goal_pose,
+                              std::vector<geometry_msgs::Point> & grid,
+                              std::vector<PointCost> & costs);
+
+    void reconfigure_callback(final_aerial_project::PlannerConfig &config, uint32_t level);
+
+    dynamic_reconfigure::Server<final_aerial_project::PlannerConfig> * reconfig_server_;
+
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
 
@@ -121,8 +139,6 @@ protected:
     ros::Publisher rviz_marker_pub_;
     ros::Publisher path_marker_pub_;
     ros::Publisher grid_cost_marker_pub_;
-
-    ros::Subscriber infoSub_;
 
     //parameters
     double p_collision_radius_;
@@ -138,10 +154,10 @@ protected:
     mav_planning::VoxbloxOmplRrt rrt_;
 
     double max_z_;
-    double distance_gain_;
-    double angle_gain_;
-    double obstacle_gain_;
-    double known_gain_;
+    double distance_weight_;
+    double angle_weight_;
+    double obstacle_weight_;
+    double known_weight_;
 
 
     bool use_cheating_paths_;

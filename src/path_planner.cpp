@@ -3,9 +3,28 @@
 #include <visualization_msgs/Marker.h>
 #include <voxblox/utils/planning_utils.h>
 #include <angles/angles.h>
+#include <algorithm>
+
 
 namespace final_aerial_project
 {
+
+
+std::ostream& operator<< (std::ostream& os, const final_aerial_project::PointCost & pcost)
+{
+    os << "distance : " << pcost.distance_cost << "\n" <<
+          "angle    : " << pcost.angle_cost    << "\n" <<
+          "obst     : " << pcost.obstacle_cost << "\n" <<
+          "known    : " << pcost.known_cost;
+    return os;
+}
+
+
+// Defining the binary function
+bool comp_costs(const PointCost & a, const PointCost & b)
+{
+    return (a.cost() < b.cost());
+}
 
 PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_private)
     : nh_(nh),
@@ -26,10 +45,10 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
 
     nh_private_.param("max_z", max_z_, 1.5);
 
-    nh_private_.param("distance_gain", distance_gain_, 1.0);
-    nh_private_.param("angle_gain", angle_gain_, 1.0);
-    nh_private_.param("obstacle_gain", obstacle_gain_, 1.0);
-    nh_private_.param("known_gain", known_gain_, 1.0);
+    nh_private_.param("distance_weight", distance_weight_, 1.0);
+    nh_private_.param("angle_weight", angle_weight_, 1.0);
+    nh_private_.param("obstacle_weight", obstacle_weight_, 1.0);
+    nh_private_.param("known_weight", known_weight_, 1.0);
 
     nh_private_.param("use_cheating_paths", use_cheating_paths_, false);
 
@@ -38,7 +57,12 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
     path_marker_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("path", 1, true);
     grid_cost_marker_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("grid_cost", 1, true);
 
-    infoSub_ = nh_private_.subscribe("info", 1, &PathPlanner::getInfoCallback, this);
+
+    reconfig_server_ = new dynamic_reconfigure::Server<final_aerial_project::PlannerConfig>();
+    dynamic_reconfigure::Server<final_aerial_project::PlannerConfig>::CallbackType f;
+    f = boost::bind(&PathPlanner::reconfigure_callback, this,  _1, _2);
+    reconfig_server_->setCallback(f);
+
 
     esdf_map_ = esdf_server_.getEsdfMapPtr();
     CHECK(esdf_map_);
@@ -87,7 +111,30 @@ PathPlanner::PathPlanner(const ros::NodeHandle &nh, const ros::NodeHandle &nh_pr
 
 }
 
-trajectory_msgs::MultiDOFJointTrajectoryPoint createTrajPoint(double x, double y, double z, double yaw)
+PathPlanner::~PathPlanner()
+{
+    delete reconfig_server_;
+}
+
+void PathPlanner::reconfigure_callback(final_aerial_project::PlannerConfig &config, uint32_t level)
+{
+    distance_weight_ = config.distance_weight;
+    angle_weight_ = config.angle_weight;
+    obstacle_weight_ = config.obstacle_weight;
+    known_weight_ = config.known_weight;
+    grid_sep_ = config.grid_separation;
+
+    printf("New Parameters:\n");
+    printf("   distance_weight_: %f\n", distance_weight_);
+    printf("   angle_weight_: %f\n", angle_weight_);
+    printf("   obstacle_weight_: %f\n", obstacle_weight_);
+    printf("   known_weight_: %f\n", known_weight_);
+    printf("   grid_sep_: %f\n", grid_sep_);
+
+    ROS_INFO ("[PathPlanner] Reconfigure callback have been called with new parameters");
+}
+
+static trajectory_msgs::MultiDOFJointTrajectoryPoint createTrajPoint(double x, double y, double z, double yaw)
 {
     trajectory_msgs::MultiDOFJointTrajectoryPoint p;
     geometry_msgs::Transform t;
@@ -303,6 +350,34 @@ visualization_msgs::Marker PathPlanner::createMarkerForPath(
     return path_marker;
 }
 
+std::vector<geometry_msgs::Point> PathPlanner::generateGridOnBounds(double z)
+{
+    std::vector<geometry_msgs::Point> grid;
+
+    Eigen::Vector3d lower_bound(Eigen::Vector3d::Zero());
+    Eigen::Vector3d upper_bound(Eigen::Vector3d::Zero());
+
+    voxblox::utils::computeMapBoundsFromLayer(
+          *esdf_map_->getEsdfLayerPtr(),
+          &lower_bound, &upper_bound);
+
+    geometry_msgs::Point p;
+    p.z = z;
+    p.y = lower_bound[1];
+    while(p.y < upper_bound[1])
+    {
+        p.x = lower_bound[0];
+        while(p.x < upper_bound[0])
+        {
+            grid.push_back(p);
+            p.x += grid_sep_;
+        }
+        p.y += grid_sep_;
+    }
+
+    return grid;
+}
+
 std::vector<geometry_msgs::Point> PathPlanner::generateGridTowardsGoal(const geometry_msgs::Point & start_point, const geometry_msgs::Point & end_point)
 {
     std::vector<geometry_msgs::Point> grid;
@@ -413,8 +488,6 @@ bool PathPlanner::isPredefinedPath(const geometry_msgs::Pose & start_pose,
     return false;
 }
 
-
-#if 1
 bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
                            const geometry_msgs::PoseStamped & goal_pose,
                            trajectory_msgs::MultiDOFJointTrajectory & sampled_plan)
@@ -452,6 +525,8 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
         }
         else  // we're done
         {
+            // last waypoint must have the requested orientation
+            (*sampled_plan.points.rbegin()).transforms[0].rotation = goal_pose.pose.orientation;
             return true;
         }
     }
@@ -460,68 +535,84 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
         ROS_WARN("RRT is disabled by option try_rrt");
     }
 
-    // Step 1: Generate a grid of possible goal points
-    // close to the MAV that are not occupied
-    double yaw = tf::getYaw(start_pose.pose.orientation) - M_PI/2;
+    // Generate a grid of possible goal points all over the map
+    // bounds that are not occupied and compute their costs
     std::vector<geometry_msgs::Point> grid_search;
-    std::vector<geometry_msgs::Point> full_grid = generateGridTowardsGoal(start_pose.pose.position, goal_pose.pose.position);
-
-    //publishGridSearchPoints(sampled_plan.header.frame_id, full_grid, true);
-
-    full_grid.push_back(goal_pose.pose.position);
-
-    for( auto & p : full_grid)
+    std::vector<PointCost> costs;
+    computeGridWithCosts(start_pose.pose, goal_pose.pose, grid_search, costs);
+    if( costs.size() == 0)
     {
-        if( isCollisionFree(p) )
+        ROS_FATAL("[Mission] No candidates found, planner has no plan");
+        return false;
+    }
+
+    // in case RRT fails, we will still go in straight line
+    int minCostIndex = std::min_element(costs.begin(),costs.end(), comp_costs) - costs.begin();
+    geometry_msgs::Point failSafePoint = grid_search[minCostIndex];
+
+    while(costs.size())
+    {
+        minCostIndex = std::min_element(costs.begin(),costs.end(), comp_costs) - costs.begin();
+        const geometry_msgs::Point & sp = grid_search[minCostIndex];
+        ROS_INFO("Selected next point is: %f, %f, %f",  sp.x, sp.y, sp.z);
+        geometry_msgs::PoseStamped winnerPose;
+        winnerPose = goal_pose; // copy all for convenience
+        winnerPose.pose.position = sp;
+        bool rrt_plan_ok = makePlan_RRT(start_pose, winnerPose, sampled_plan);
+        if(rrt_plan_ok)
         {
-            grid_search.push_back(p);
-            ROS_DEBUG("Accepted free point is: %f, %f, %f",
-                     p.x, p.y, p.z);
+            return true;
         }
-        else
-        {
-          ROS_DEBUG("Discarded occupied point is: %f, %f, %f",
-                   p.x, p.y, p.z);
+        else {
+            ROS_ERROR("RRT failed to produce a valid path to selected point, try with next one");
+            // remove the point from the grid search and try again
+            costs.erase (costs.begin()+minCostIndex);
+            grid_search.erase (grid_search.begin()+minCostIndex);
         }
     }
+
+    ROS_FATAL("[Mission] All candidates in grid search were discarded by RRT! Will go in straight line");
+
+    // Send a manual goal in straight line
+    const geometry_msgs::Point & sp = failSafePoint;
+    publishGridSearchArrow(sampled_plan.header.frame_id, start_pose.pose.position, sp);
+
+    // Specify difference in direction
+    double yaw = atan2( sp.y - start_pose.pose.position.y,
+                        sp.x - start_pose.pose.position.x);
+    tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, yaw);
+
+    // initial point with correct heading
+    trajectory_msgs::MultiDOFJointTrajectoryPoint initial_point;
+    geometry_msgs::Transform t_initial;
+    t_initial.translation.x = start_pose.pose.position.x;
+    t_initial.translation.y = start_pose.pose.position.y;
+    t_initial.translation.z = start_pose.pose.position.z;
+    tf::quaternionTFToMsg(quat, t_initial.rotation);
+    initial_point.transforms.push_back(t_initial);
+    sampled_plan.points.push_back(initial_point);
+
+    trajectory_msgs::MultiDOFJointTrajectoryPoint traj_point;
+    geometry_msgs::Transform t;
+    t.translation.x = sp.x;
+    t.translation.y = sp.y;
+    t.translation.z = sp.z;
+    t.rotation.w = 1.0;
+
+    tf::quaternionTFToMsg(quat, t.rotation);
+
+    traj_point.transforms.push_back(t);
+    sampled_plan.points.push_back(traj_point);
+
+    return true;
 
 #if 0
-    if(isPointInsideSearchGrid(start_pose.pose, goal_pose.pose) &&
-       isCollisionFree(goal_pose.pose.position))
+    int minCostIndex = std::min_element(costs.begin(),costs.end(), comp_costs) - costs.begin();
+    if( minCostIndex >= 0 && minCostIndex < static_cast<int>(grid_search.size()))
     {
-        grid_search.push_back(goal_pose.pose.position);
-        ROS_INFO("Goal point is in reach, accepted in search grid!");
-    }
-#endif
-
-    ROS_INFO("Number of candidates in grid search: %lu", grid_search.size());
-
-    // Step 2: for each possible location compute the cost
-    double min_cost = 99999999;
-    int min_cost_pos = -1;
-    int i = 0;
-    visualization_msgs::MarkerArray marker_array;
-
-    for( auto & p : grid_search)
-    {
-        PointCost pcost = computePointCost(p, goal_pose.pose, start_pose.pose);
-        if( pcost.cost() < min_cost )
-        {
-            min_cost = pcost.cost();
-            min_cost_pos = i;
-        }
-        createCylinderCost(pcost.costs(), p, i, marker_array);
-        i++;
-    }
-    grid_cost_marker_pub_.publish(marker_array);
-
-    if( min_cost_pos != -1)
-    {
-        const geometry_msgs::Point & sp = grid_search[min_cost_pos];
+        const geometry_msgs::Point & sp = grid_search[minCostIndex];
         ROS_INFO("Selected next point is: %f, %f, %f",  sp.x, sp.y, sp.z);
 
-        sampled_plan.header.frame_id = goal_pose.header.frame_id;
-        sampled_plan.header.stamp = ros::Time::now();
 
         publishGridSearchPoints(sampled_plan.header.frame_id, grid_search, false);
 
@@ -575,8 +666,40 @@ bool PathPlanner::makePlan(const geometry_msgs::PoseStamped & start_pose,
     }
 
     return false;
-}
 #endif
+}
+
+
+void PathPlanner::computeGridWithCosts(const geometry_msgs::Pose & start_pose,
+                                       const geometry_msgs::Pose & goal_pose,
+                                       std::vector<geometry_msgs::Point> & grid_search,
+                                       std::vector<PointCost> & costs)
+{
+    //std::vector<geometry_msgs::Point> full_grid = generateGridTowardsGoal(start_pose.position, goal_pose.position);
+    std::vector<geometry_msgs::Point> full_grid = generateGridOnBounds(goal_pose.position.z);
+
+    full_grid.push_back(goal_pose.position);
+
+    publishGridSearchPoints("world", full_grid, true);
+
+    full_grid.push_back(goal_pose.position);
+
+    visualization_msgs::MarkerArray marker_array;
+    int i = 0;
+    for( auto & p : full_grid)
+    {
+        if( isCollisionFree(p) )
+        {
+            grid_search.push_back(p);
+            PointCost pcost = computePointCost(p, goal_pose, start_pose);
+            costs.push_back(pcost);
+            createCylinderCost(pcost.costs(), p, i, marker_array);
+            i++;
+        }
+    }
+
+    grid_cost_marker_pub_.publish(marker_array);
+}
 
 
 bool PathPlanner::makePlanService(final_aerial_project::MakePlanRequest &req,
@@ -601,8 +724,8 @@ void PathPlanner::publishGridSearchArrow(const std::string & frame_id, const geo
 
     // Scale is the diameter of the shape
     marker.scale.x = 0.03; // shaft diameter
-    marker.scale.y = 0.06; // head diameter
-    marker.scale.z = 0.06; // if not zero, head length
+    marker.scale.y = 0.12; // head diameter
+    marker.scale.z = 0.12; // if not zero, head length
 
     marker.color.b = 1.0;
     marker.color.a = 1.0;
@@ -628,7 +751,7 @@ void PathPlanner::publishGoalPointMarker(const geometry_msgs::PoseStamped & pose
     marker.pose.orientation.w = 1.0;
 
     // Scale is the diameter of the shape
-    marker.scale.x = 0.2;
+    marker.scale.x = 0.4;
     marker.scale.y = marker.scale.x;
     marker.scale.z = marker.scale.x;
 
@@ -657,7 +780,7 @@ void PathPlanner::publishGridSearchPoints(const std::string & frame_id, const st
     marker.pose.orientation.w = 1.0;
 
     // Scale is the diameter of the shape
-    marker.scale.x = 0.05;
+    marker.scale.x = 0.2;
     marker.scale.y = marker.scale.x;
     marker.scale.z = marker.scale.x;
 
@@ -706,7 +829,7 @@ void PathPlanner::createCylinderCost(const std::vector<double> & costs,
         cylinder_marker.header.stamp = now;
         cylinder_marker.type = visualization_msgs::Marker::CYLINDER;
         cylinder_marker.color = colorFromIndex(i);
-        cylinder_marker.ns = "cylinders";
+        cylinder_marker.ns = "cylinders_cost_" + std::to_string(i);
         cylinder_marker.id = start_id + i;
         cylinder_marker.scale.x = 0.2;
         cylinder_marker.scale.y = cylinder_marker.scale.x;
@@ -721,60 +844,49 @@ void PathPlanner::createCylinderCost(const std::vector<double> & costs,
 
 }
 
-void PathPlanner::getInfoCallback(const geometry_msgs::Point::ConstPtr & msg)
+
+void PathPlanner::getInfoCallback(const geometry_msgs::Point & start, const geometry_msgs::Point & goal)
 {
-    Eigen::Vector3d position(msg->x, msg->y, msg->z);
+    geometry_msgs::PoseStamped goal_pose;
+    goal_pose.pose.position = goal;
+    goal_pose.pose.orientation.w = 1.0;
 
-    double numPointsKnown = 0;
-    std::vector<geometry_msgs::Point> pointList = generateGrid(*msg, 15, 15, 3, 0.0, 0.2);
-    for( const auto & p : pointList)
-    {
-        if( isPointObserved(p) )
-            numPointsKnown += 1.0;
-    }
-    numPointsKnown = numPointsKnown/pointList.size();
+    geometry_msgs::PoseStamped start_pose;
+    start_pose.pose.position = start;
+    start_pose.pose.orientation.w = 1.0;
 
+    std::vector<geometry_msgs::Point> grid_search;
+    std::vector<PointCost> costs;
+    computeGridWithCosts(start_pose.pose, goal_pose.pose, grid_search, costs);
 
-    printf("Point: %f,%f,%f\n", msg->x, msg->y, msg->z);
-    if( isPointInMap(*msg) )
-        printf("    Point is INSIDE map bounds\n");
-    else
-        printf("    Point is OUTSIDE map bounds\n");
+    int minCostIndex = std::min_element(costs.begin(),costs.end(), comp_costs) - costs.begin();
+    printf("Selected point index: %d\n", minCostIndex);
+    ROS_ASSERT(minCostIndex >= 0);
+    const geometry_msgs::Point & selected = grid_search[minCostIndex];
 
-    if( esdf_map_->isObserved(position) )
-        printf("    Point is OBSERVED\n");
-    else
-        printf("    Point is NOT OBSERVED\n");
+    double yaw = atan2(selected.y - start_pose.pose.position.y, selected.x - start_pose.pose.position.x);
+    printf("Selected point: %g,%g,%g  Yaw = %g\n",
+           selected.x, selected.y, selected.z, yaw);
 
-    double distance = 0.0;
-    const bool kInterpolate = false;
+    printf("./send_waypoint.py %g %g %g %g %g %g %g %g\n",
+           start_pose.pose.position.x, start_pose.pose.position.y, start_pose.pose.position.z, yaw,
+           selected.x, selected.y, selected.z, yaw);
 
-    Eigen::Vector3d gradient(Eigen::Vector3d::Zero());
-    // Returns true if the point exists in the map AND is observed.
-    bool point_known = esdf_map_->getDistanceAndGradientAtPosition(position, kInterpolate, &distance, &gradient);
-    printf("    Distance: %f  Known: %d\n    Gradient (%f,%f,%f) \n",
-           distance, point_known,
-           gradient[0], gradient[1], gradient[2] );
-
-    std::vector<double> costs {0.9, 1.2, 0.4};
-    visualization_msgs::MarkerArray marker_array;
-    createCylinderCost(costs, *msg, 0, marker_array);
-    grid_cost_marker_pub_.publish(marker_array);
-
+    publishGridSearchArrow("world", start_pose.pose.position, selected);
 }
 
 PointCost PathPlanner::computePointCost(const geometry_msgs::Point & point,
                                      const geometry_msgs::Pose & goal_pose,
                                      const geometry_msgs::Pose & start_pose)
 {
-    //double cost {0.0};
 
     double distance_to_goal = 0.0;
-
-    if(distance_gain_)
+    if(distance_weight_)
     {
         double dist_start_to_goal = euclideanDistance(start_pose.position,  goal_pose.position);
         distance_to_goal = euclideanDistance(point,  goal_pose.position);
+        // normalize distance, 1.0 means distance from start to goal
+        // if < 1.0, means I'm closer. If > 1.0, means I'm farther
         distance_to_goal = distance_to_goal/dist_start_to_goal;
     }
 
@@ -787,27 +899,37 @@ PointCost PathPlanner::computePointCost(const geometry_msgs::Point & point,
     // normalize error angle, such that 180º means +1 in cost, error is [0, 1.0]
     error_yaw = error_yaw/M_PI;
 
-    double obstacle_distance = abs(getMapDistance(point));
+    double obstacle_distance = p_collision_radius_;
+    if(obstacle_weight_)
+    {
+        obstacle_distance = abs(getMapDistance(point));
+        // if obstacle_distance is 0, this means that this point is invalid
+        // and should be discarded. This however should not happen and probably
+        // won't reach this stage
+        if(obstacle_distance == 0.0)
+           obstacle_distance = p_collision_radius_/1000.0;
+    }
 
-    double numPointsKnown = 0;
-    if(known_gain_)
+    int countPoints {0};
+    double numPointsKnown {0.0};
+    if(known_weight_)
     {
         std::vector<geometry_msgs::Point> pointList = generateGrid(point, 15, 15, 3, 0.0, 0.2);
         for( const auto & p : pointList)
         {
             if( isPointObserved(p) )
-                numPointsKnown += 1.0;
+                countPoints++;
         }
-        numPointsKnown = numPointsKnown/pointList.size();
-
+        numPointsKnown = static_cast<double>(countPoints)/pointList.size();
+        //printf("    TotalPoints: %lu  KnownPoints: %d  Ratio: %f\n", pointList.size(), countPoints, numPointsKnown);
         //printf("Point %f,%f  numPointKnown = %f\n", point.x, point.y, numPointsKnown);
     }
 
     PointCost cost;
-    cost.distance_cost = distance_gain_ * distance_to_goal;
-    cost.angle_cost    = angle_gain_    * error_yaw;
-    cost.obstacle_cost = obstacle_gain_ * (p_collision_radius_/obstacle_distance);
-    cost.known_cost    = known_gain_    * numPointsKnown;
+    cost.distance_cost = distance_weight_ * distance_to_goal;
+    cost.angle_cost    = angle_weight_    * error_yaw;
+    cost.obstacle_cost = obstacle_weight_ * (p_collision_radius_/obstacle_distance);
+    cost.known_cost    = known_weight_    * numPointsKnown;
 
     return cost;
 }
@@ -887,19 +1009,17 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
     ROS_INFO("Planning path.");
 
     if (getMapDistance(start_pose.position_W) < p_collision_radius_) {
-        ROS_ERROR("Start pose occupied!");
+        ROS_ERROR("[Mission] RRT: Start pose occupied!");
         return false;
     }
 
     if (getMapDistance(goal_pose.position_W) < p_collision_radius_) {
-        ROS_ERROR("Goal pose occupied!");
+        ROS_ERROR("[Mission] RRT: Goal pose occupied!");
         return false;
     }
 
     mav_msgs::EigenTrajectoryPoint::Vector waypoints;
-    //mav_trajectory_generation::timing::Timer rrtstar_timer("plan/rrt_star");
     bool success = rrt_.getPathBetweenWaypoints(start_pose, goal_pose, &waypoints);
-    //rrtstar_timer.Stop();
     double path_length = computePathLength(waypoints);
     std::size_t num_vertices = waypoints.size();
     ROS_INFO("RRT* Success? %d Path length: %f Vertices: %lu", success, path_length, num_vertices);
@@ -909,7 +1029,6 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
         return false;
     }
 
-    //trajectory_msgs::MultiDOFJointTrajectory
     mav_msgs::msgMultiDofJointTrajectoryFromEigen(waypoints, "base_link", &rrt_plan);
 
     // setup the correct orientation of each waypoint
@@ -927,12 +1046,7 @@ bool PathPlanner::makePlan_RRT(const geometry_msgs::PoseStamped & start,
         }
         tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, last_yaw);
         tf::quaternionTFToMsg(quat, transf.rotation);
-
-        //transf.translation.z = goal.pose.position.z;
     }
-
-    // last point must have the requested orientation
-    (*rrt_plan.points.rbegin()).transforms[0].rotation = goal.pose.orientation;
 
     // send the trajectory to RViz
     visualization_msgs::MarkerArray marker_array;

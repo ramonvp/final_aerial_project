@@ -25,6 +25,7 @@ class StateMachine
 public:
   enum State {
       INITIALIZING,
+      INITIAL_SCAN,
       WAITING_ORDER,
       FLYING_TO_TARGET,
       FLYING_TO_RECHARGE,
@@ -35,6 +36,7 @@ public:
 
   enum Events {
       TAKE_OFF,
+      SCAN_FINISHED,
       ORDER_RECEIVED,
       TARGET_REACHED,
       OBJECT_FOUND,
@@ -52,6 +54,7 @@ public:
       switch(state)
       {
           case INITIALIZING: return "INITIALIZING";
+          case INITIAL_SCAN: return "INITIAL_SCAN";
           case WAITING_ORDER: return "WAITING_ORDER";
           case FLYING_TO_TARGET: return "FLYING_TO_TARGET";
           case FLYING_TO_RECHARGE: return "FLYING_TO_RECHARGE";
@@ -63,16 +66,17 @@ public:
       }
   }
 
-  void transitionTo(State new_state)
-  {
-      ROS_INFO("[StateMachine] Transition from %s to %s",
-               getStateName(state_), getStateName(new_state));
-      state_ = new_state;
-  }
-
   void StateInitializing(Events event)
   {
       if( event == Events::TAKE_OFF )
+      {
+          transitionTo(INITIAL_SCAN);
+      }
+  }
+
+  void StateInitialScan(Events event)
+  {
+      if( event == Events::SCAN_FINISHED )
       {
           transitionTo(WAITING_ORDER);
       }
@@ -124,10 +128,15 @@ public:
 
   void StateFlyingToRecharge(Events event)
   {
-      if( event == Events::TARGET_REACHED )
+      if( event == Events::ORDER_RECEIVED )
       {
-          transitionTo(WAITING_ORDER);
+          transitionTo(FLYING_TO_TARGET);
       }
+      else if( event == Events::OBJECT_FOUND )
+      {
+          transitionTo(FLYING_TO_CHECKPAD);
+      }
+
   }
 
   void signalEvent(Events event)
@@ -135,6 +144,7 @@ public:
       switch(state_)
       {
           case INITIALIZING: StateInitializing(event); break;
+          case INITIAL_SCAN: StateInitialScan(event); break;
           case WAITING_ORDER: StateWaitingOrder(event); break;
           case FLYING_TO_TARGET: StateFlyingToTarget(event); break;
           case FLYING_TO_RECHARGE: StateFlyingToRecharge(event); break;
@@ -149,6 +159,13 @@ public:
   State state() const { return state_;}
 
 protected:
+  void transitionTo(State new_state)
+  {
+      ROS_INFO("[StateMachine] Transition from %s to %s",
+               getStateName(state_), getStateName(new_state));
+      state_ = new_state;
+  }
+
   State state_;
 };
 
@@ -164,6 +181,7 @@ public:
         lowBatteryThreshold_{40},
         takeOffSent_{false},
         takeOffHeight_{1.0},
+        initialScanSent_{false},
         distanceThreshold_{0.5},
         yawThreshold_{0.2},
         poseReachedTrigger_{10},
@@ -250,8 +268,9 @@ public:
         t.translation.x = x;
         t.translation.y = y;
         t.translation.z = z;
-        tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, yaw);
-        tf::quaternionTFToMsg(quat, t.rotation);
+        t.rotation = tf::createQuaternionMsgFromYaw(yaw);
+        //tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, yaw);
+        //tf::quaternionTFToMsg(quat, t.rotation);
         p.transforms.push_back(t);
         return p;
     }
@@ -377,7 +396,7 @@ public:
             // Go back to charging pad
             ROS_WARN("[MissionPlanner] Low battery: %d secs", remainingBattery_);
 
-            // TODO: If we are flying to CheckPad and we are
+            // If we are flying to CheckPad and we are
             // very close, maybe wait a little bit
             if(sm_.state() == StateMachine::FLYING_TO_CHECKPAD)
             {
@@ -385,9 +404,15 @@ public:
                if(distance < 12.0) return;
             }
 
-            // TODO: currently disabled, check state machine loops
-            //sm_.signalEvent(StateMachine::Events::LOW_BATTERY);
-            //plannerPub_.publish(chargingPadPose_);
+            if(sm_.state() == StateMachine::WAITING_ORDER ||
+               sm_.state() == StateMachine::SEARCHING_TARGET)
+            {
+                return;
+            }
+
+            previousState_ = sm_.state();
+            sm_.signalEvent(StateMachine::Events::LOW_BATTERY);
+            fly_to(chargingPadPose_.pose);
         }
     }
 
@@ -466,7 +491,22 @@ public:
     bool ifFlyingSomewhere() const
     {
         return sm_.state() == StateMachine::FLYING_TO_TARGET ||
-               sm_.state() == StateMachine::FLYING_TO_CHECKPAD;
+               sm_.state() == StateMachine::FLYING_TO_CHECKPAD ||
+               sm_.state() == StateMachine::FLYING_TO_RECHARGE;
+    }
+
+    void delay_execution(int seconds)
+    {
+        ROS_INFO("[Mission] Wait for %d seconds", seconds);
+        ros::Rate r(10);
+        int counter = 0;
+        int end = seconds*10;
+        while(counter < end)
+        {
+            ros::spinOnce();
+            r.sleep();
+            counter++;
+        }
     }
 
     void takeOff()
@@ -479,14 +519,7 @@ public:
         poseCommandPub_.publish(takeOffMsg);
         takeOffSent_ = true;
         // wait for a few seconds to be airborne
-        ros::Rate r(10);
-        int counter = 0;
-        while(counter < 50) // about 5segs
-        {
-            ros::spinOnce();
-            r.sleep();
-            counter++;
-        }
+        delay_execution(5);
         sm_.signalEvent(StateMachine::Events::TAKE_OFF);
     }
 
@@ -494,6 +527,7 @@ public:
     {
         static int counter = 0;
         static int poseReachedCounter = 0;
+        static bool half_scan = true;
 
         ROS_INFO_ONCE("[MissionPlanner] First odom message received");
         currentOdom_ = *msg;
@@ -503,6 +537,38 @@ public:
             takeOff();
             return;
         }
+
+        if( sm_.state() == StateMachine::INITIAL_SCAN )
+        {
+            if( !initialScanSent_ )
+            {
+                plannerTargetPose_ = currentOdom_.pose.pose;
+                scanHalfTargetPose_ = plannerTargetPose_;
+                double yaw = tf::getYaw(plannerTargetPose_.orientation);
+                scanHalfTargetPose_.orientation = tf::createQuaternionMsgFromYaw(yaw+M_PI);
+                trajectoryPub_.publish( create360() );
+                initialScanSent_ = true;
+            }
+            else
+            {
+                double pending_dist, pending_yaw;
+                if( poseReached(msg->pose.pose, scanHalfTargetPose_, pending_dist, pending_yaw) )
+                {
+                    if( half_scan )
+                    {
+                        scanHalfTargetPose_ = plannerTargetPose_;
+                        half_scan = false;
+                        ROS_INFO("[Mission] Half scan reached");
+                    }
+                    else
+                    {
+                        ROS_INFO("[Mission] Initial 360 scan, start mission!");
+                        sm_.signalEvent(StateMachine::Events::SCAN_FINISHED);
+                    }
+                }
+            }
+        }
+
 
         if( !ifFlyingSomewhere() )
             return;
@@ -531,6 +597,21 @@ public:
                 feedbackMsg.approximate_position = arucoPositions_[nextProduct_.marker_id];
                 productFeedbackPub_.publish(feedbackMsg);
                 sm_.signalEvent(StateMachine::Events::TARGET_REACHED);
+            }
+            else if(sm_.state() == StateMachine::FLYING_TO_RECHARGE)
+            {
+                if( previousState_ == StateMachine::FLYING_TO_TARGET)
+                {
+                    ROS_INFO("[Mission] Battery recharged, resume go to target");
+                    fly_to(nextProduct_.approximate_pose.pose);
+                    sm_.signalEvent(StateMachine::Events::ORDER_RECEIVED);
+                }
+                else if( previousState_ == StateMachine::FLYING_TO_CHECKPAD)
+                {
+                    ROS_INFO("[Mission] Battery recharged, resume go to CheckPad");
+                    fly_to(checkPadPose_.pose);
+                    sm_.signalEvent(StateMachine::Events::OBJECT_FOUND);
+                }
             }
         }
         else
@@ -588,6 +669,21 @@ public:
         plannerTargetPose_ = pose;
     }
 
+    trajectory_msgs::MultiDOFJointTrajectory create360()
+    {
+        trajectory_msgs::MultiDOFJointTrajectory scanTrajectory;
+
+        const geometry_msgs::Point & currentPoint = currentOdom_.pose.pose.position;
+        double currentYaw = tf::getYaw(currentOdom_.pose.pose.orientation);
+        double inc = M_PI/2.0;
+        for(int i = 1; i <= 4; i++)
+          scanTrajectory.points.push_back(
+                createTrajPoint(
+                  currentPoint.x,currentPoint.y,currentPoint.z, currentYaw + i*inc) );
+
+        return scanTrajectory;
+    }
+
 private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_params_;
@@ -620,6 +716,7 @@ private:
 
     bool takeOffSent_;
     double takeOffHeight_;
+    bool initialScanSent_;
 
     final_aerial_project::ProductInfo nextProduct_;
 
@@ -637,6 +734,11 @@ private:
     double transform_tolerance_;
     // the target pose sent to the planner
     geometry_msgs::Pose plannerTargetPose_;
+
+    geometry_msgs::Pose scanHalfTargetPose_;
+
+    // previous state machine before going to recharge battery
+    StateMachine::State previousState_;
 };
 
 

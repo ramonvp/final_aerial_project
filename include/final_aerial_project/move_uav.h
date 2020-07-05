@@ -31,6 +31,8 @@ protected:
 
     bool isQuaternionValid(const geometry_msgs::Quaternion& q);
 
+    void makePlanCallback(const geometry_msgs::Point::ConstPtr & msg);
+
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
 
@@ -48,6 +50,8 @@ protected:
     geometry_msgs::PoseWithCovarianceStamped currentPose_;
 
     double target_tolerance_;
+
+    ros::Subscriber infoSub_;
 };
 
 

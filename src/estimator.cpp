@@ -236,7 +236,11 @@ void EstimatorNode::TwistCallback(const geometry_msgs::TwistWithCovarianceStampe
     {
         msgOdometry_.header.stamp = twist_msg->header.stamp;
 
-        y_twist << twist_msg->twist.twist.linear.x, twist_msg->twist.twist.linear.y, twist_msg->twist.twist.linear.z;
+        tf::Vector3 twist_base_link ( twist_msg->twist.twist.linear.x, twist_msg->twist.twist.linear.y, twist_msg->twist.twist.linear.z);
+        tf::Vector3 twist_world = tf::quatRotate(pose2imu_rotation, twist_base_link);
+
+        //y_twist << twist_msg->twist.twist.linear.x, twist_msg->twist.twist.linear.y, twist_msg->twist.twist.linear.z;
+        y_twist << twist_world[0], twist_world[1], twist_world[2];
 
         predict();
 

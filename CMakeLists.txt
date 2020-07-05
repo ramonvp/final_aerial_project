@@ -107,7 +107,10 @@ generate_messages(
 ##   * uncomment the "generate_dynamic_reconfigure_options" section below
 ##     and list every .cfg file to be processed
 
-generate_dynamic_reconfigure_options(cfg/Controller.cfg)
+generate_dynamic_reconfigure_options(
+  cfg/Controller.cfg
+  cfg/Planner.cfg
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -156,7 +159,7 @@ target_link_libraries(move_uav
   ${Boost_LIBRARIES}
   ${catkin_LIBRARIES}
 )
-add_dependencies(move_uav ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(move_uav ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg )
 
 
 ## Add cmake target dependencies of the library
@@ -208,8 +211,8 @@ add_dependencies(mission_planner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 target_link_libraries(mission_planner ${catkin_LIBRARIES})
 
 add_executable(controller_node src/control.cpp)
-add_dependencies(controller_node ${catkin_EXPORTED_TARGETS})
-add_dependencies(controller_node ${PROJECT_NAME}_gencfg)
+add_dependencies(controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+#add_dependencies(controller_node ${PROJECT_NAME}_gencfg)
 target_link_libraries(controller_node ${catkin_LIBRARIES})
 
 add_executable(estimator_node src/estimator.cpp)

@@ -19,15 +19,14 @@ MoveUAV::MoveUAV(const ros::NodeHandle &nh, const ros::NodeHandle &nh_private)
     if(enable_rviz_goal)
         rviz_goal_sub_ = nh_.subscribe("/move_base_simple/goal", 1, &MoveUAV::rvizGoalCallback, this);
 
-    std::string pose_topic = "/firefly/ground_truth/pose_with_covariance";
-    //pose_sub_ =  nh_.subscribe(pose_topic, 1, &MoveUAV::poseCallback, this );
     odom_sub_ =  nh_.subscribe("odom", 1, &MoveUAV::odomCallback, this );
     traj_pub_ = nh_.advertise<trajectory_msgs::MultiDOFJointTrajectory>("/firefly/command/trajectory", 1);
 
     traj_goal_pub_ = nh_.advertise<final_aerial_project::MoveUAVActionGoal>("move_uav/goal", 1);
 
-    nh_private_.param("target_tolerance", target_tolerance_, 0.2);
+    infoSub_ = nh_private_.subscribe("make_plan", 1, &MoveUAV::makePlanCallback, this);
 
+    nh_private_.param("target_tolerance", target_tolerance_, 0.2);
 }
 
 bool MoveUAV::targetReached(const geometry_msgs::Point & goal) const
@@ -46,6 +45,19 @@ geometry_msgs::Point MoveUAV::lastWaypoint(const trajectory_msgs::MultiDOFJointT
    p.z = last.transforms[0].translation.z;
 
    return p;
+}
+
+void MoveUAV::makePlanCallback(const geometry_msgs::Point::ConstPtr & msg)
+{
+    printf("MAKE PLAN\n");
+
+    geometry_msgs::PoseStamped goal_pose;
+    goal_pose.header.frame_id = "world";
+    goal_pose.pose.position = *msg;
+    goal_pose.pose.orientation.w = 1.0;
+    planner_.publishGoalPointMarker(goal_pose);
+
+    planner_.getInfoCallback(currentPose_.pose.pose.position, *msg);
 }
 
 bool MoveUAV::isQuaternionValid(const geometry_msgs::Quaternion& q){
@@ -186,7 +198,7 @@ void MoveUAV::odomCallback(const nav_msgs::Odometry::ConstPtr& msg )
 
 void MoveUAV::rvizGoalCallback(const geometry_msgs::PoseStampedConstPtr& msg)
 {
-    ROS_INFO("[MOVE_UAV] Goal received: %g,%g,%g  %g,%g,%g,%",
+    ROS_INFO("[MOVE_UAV] Goal received: %g,%g,%g  %g,%g,%g,%g",
              msg->pose.position.x, msg->pose.position.y, msg->pose.position.z,
              msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w);
 

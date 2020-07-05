@@ -27,7 +27,7 @@ if __name__ == '__main__':
     msg.header.stamp = rospy.Time.now()
     msg.header.frame_id = "world"
 
-    angle_inc = 2*math.pi/20.0
+    angle_inc = 2*math.pi/4.0
     end_yaw = yaw + 2*math.pi
 
     while yaw <= end_yaw:

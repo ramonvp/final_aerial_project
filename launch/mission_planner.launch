@@ -3,7 +3,7 @@
 
     <arg name="distance_threshold" default="0.25"/>
     <arg name="yaw_threshold" default="0.2"/>
-    <arg name="low_battery_secs" default="40"/>
+    <arg name="low_battery_secs" default="50"/>
 
     <group if="$(arg enable_ground_truth)">
         <node pkg="final_aerial_project" type="mission_planner" name="mission_planner" output="screen">

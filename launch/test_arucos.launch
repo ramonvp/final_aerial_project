@@ -1,0 +1,20 @@
+<launch>
+    <include file="$(find final_aerial_project)/launch/aerial_project_final.launch">
+        <arg name="run_controller" value="false"/>
+        <arg name="enable_ground_truth" value="true" />
+    </include>
+
+    <!-- Aruco Detection -->
+    <include file="$(find final_aerial_project)/launch/aruco_detector.launch"/>
+
+    <node pkg="final_aerial_project" type="aruco_pos_node" name="aruco_pos" output="screen">
+        <remap from="pose_output" to="/firefly/aruco_pose"/>
+        <remap from="fiducial_transforms" to="/ventral/fiducial_transforms"/>
+
+        <param name="base_link_frame"  value="firefly/base_link"/>
+        <param name="camera_frame"     value="firefly/camera_ventral_optical_link"/>
+        <param name="global_frame"     value="world"/>
+        <param name="weighting_scale"  value="0.05"/>
+    </node>
+
+</launch>
